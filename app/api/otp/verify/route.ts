@@ -3,14 +3,13 @@ import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendConfirmationSms } from '@/lib/twilio/client'
 import { hashOTP } from '@/lib/utils'
+import { otpVerifyLimiter } from '@/lib/rate-limit'
 
 const VerifyOtpSchema = z.object({
   appointmentId: z.string().uuid(),
   otp:           z.string().regex(/^\d{6}$/, 'OTP must be exactly 6 digits'),
 })
 
-// Shapes the DB row into a safe, client-facing response.
-// Never exposes otp_code_hash, otp_expires_at, or raw IDs beyond appointmentId.
 function buildPublicAppointment(
   appt: {
     id: string
@@ -21,20 +20,20 @@ function buildPublicAppointment(
     status: string
   },
   enriched: {
-    doctors: { name: string } | null
+    doctors:  { name: string } | null
     services: { name: string; duration_minutes: number } | null
-    clinics: { name: string; timezone: string } | null
+    clinics:  { name: string; timezone: string } | null
   } | null
 ) {
   return {
-    id:           appt.id,
-    patientName:  appt.patient_name,
-    startsAt:     appt.starts_at,
-    endsAt:       appt.ends_at,
-    status:       appt.status,
-    doctor:       enriched?.doctors  ?? null,
-    service:      enriched?.services ?? null,
-    clinicName:   enriched?.clinics?.name     ?? null,
+    id:             appt.id,
+    patientName:    appt.patient_name,
+    startsAt:       appt.starts_at,
+    endsAt:         appt.ends_at,
+    status:         appt.status,
+    doctor:         enriched?.doctors  ?? null,
+    service:        enriched?.services ?? null,
+    clinicName:     enriched?.clinics?.name     ?? null,
     clinicTimezone: enriched?.clinics?.timezone ?? null,
   }
 }
@@ -56,11 +55,31 @@ export async function POST(req: NextRequest) {
   }
 
   const { appointmentId, otp } = parsed.data
+
+  // C-01 FIX: Rate limit by appointmentId — max 5 attempts per 10-minute window.
+  // On the 6th+ attempt, cancel the appointment to fully invalidate the OTP.
+  const { success: ratePassed } = await otpVerifyLimiter.limit(appointmentId)
+  if (!ratePassed) {
+    const supabase = createServiceClient()
+    // Cancel appointment so the OTP can never be used even after TTL resets
+    await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', appointmentId)
+      .eq('status', 'pending')
+
+    return NextResponse.json(
+      {
+        error: 'MAX_ATTEMPTS_EXCEEDED',
+        message: 'Maximum verification attempts exceeded. Please start the booking process again.',
+      },
+      { status: 429 }
+    )
+  }
+
   const otpHash  = hashOTP(otp)
   const supabase = createServiceClient()
 
-  // Atomically verify hash + transition pending → confirmed.
-  // Clears otp_code_hash after success (replay-proof).
   const { data: confirmed, error: confirmError } = await supabase.rpc('confirm_appointment', {
     p_appointment_id: appointmentId,
     p_otp_code_hash:  otpHash,
@@ -79,7 +98,6 @@ export async function POST(req: NextRequest) {
 
   const appt = Array.isArray(confirmed) ? confirmed[0] : confirmed
 
-  // Fetch enriched data for SMS + response (doctor name, service name, clinic timezone)
   const { data: enriched } = await supabase
     .from('appointments')
     .select(`
@@ -91,7 +109,6 @@ export async function POST(req: NextRequest) {
     .eq('id', appt.id)
     .single()
 
-  // Best-effort confirmation SMS — don't fail the response if Twilio errors
   if (enriched) {
     const clinic  = enriched.clinics  as { name: string; timezone: string } | null
     const doctor  = enriched.doctors  as { name: string } | null

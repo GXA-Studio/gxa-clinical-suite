@@ -1,8 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { createHash, randomInt } from 'crypto'
+import { createHash, createHmac, randomInt } from 'crypto'
 import { formatInTimeZone } from 'date-fns-tz'
-import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 // shadcn/ui standard cn helper
@@ -12,13 +11,17 @@ export function cn(...inputs: ClassValue[]) {
 
 // ---------- OTP ----------
 
+// L-01 FIX: exclusive upper bound → use 1_000_000 to include 999999 (full 900,000 space)
 export function generateOTP(): string {
-  // Cryptographically random 6-digit code
-  return String(randomInt(100000, 999999))
+  return String(randomInt(100000, 1_000_000))
 }
 
+// M-02 FIX: HMAC-SHA256 with server-side pepper prevents rainbow table attacks.
+// Even if otp_code_hash column is leaked, reversing requires knowing OTP_HASH_PEPPER.
 export function hashOTP(otp: string): string {
-  return createHash('sha256').update(otp).digest('hex')
+  const pepper = process.env.OTP_HASH_PEPPER
+  if (!pepper) throw new Error('OTP_HASH_PEPPER env var must be set')
+  return createHmac('sha256', pepper).update(otp).digest('hex')
 }
 
 // ---------- Date / Timezone ----------
@@ -32,23 +35,27 @@ export function formatLocalDateTime(
   return formatInTimeZone(new Date(utcDate), timezone, fmt, { locale: es })
 }
 
-// Format for SMS text (short and unambiguous)
+// Format for SMS text
 export function formatSmsDateTime(utcDate: string | Date, timezone: string): string {
   return formatInTimeZone(new Date(utcDate), timezone, "dd/MM/yyyy 'a las' HH:mm", {
     locale: es,
   })
 }
 
-// Build an ISO date string (YYYY-MM-DD) from a local date in a given timezone
 export function toLocalDateString(utcDate: string | Date, timezone: string): string {
   return formatInTimeZone(new Date(utcDate), timezone, 'yyyy-MM-dd')
 }
 
 // ---------- Phone ----------
 
-// Validate E.164 format: +[country code][number], 8-15 digits total
+// E.164: + followed by 1-9 (no leading zero country code) + 7-14 more digits = 8-15 total digits
 export function isValidE164(phone: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(phone)
+}
+
+// M-04 FIX: strip control characters (incl. newlines) to prevent SMS injection
+export function sanitizeName(name: string): string {
+  return name.replace(/[\r\n\t\x00-\x1F\x7F]/g, ' ').trim()
 }
 
 // ---------- Misc ----------

@@ -1,3 +1,4 @@
+import 'server-only'  // H-01 FIX: hard build error if imported in a Client Component
 import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'

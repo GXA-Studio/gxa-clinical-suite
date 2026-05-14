@@ -1,3 +1,4 @@
+import 'server-only'  // H-01 FIX: prevents accidental bundling of Twilio credentials in client
 import twilio from 'twilio'
 import { formatSmsDateTime } from '@/lib/utils'
 

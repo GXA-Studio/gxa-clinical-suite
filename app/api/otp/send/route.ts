@@ -2,17 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendOtpSms } from '@/lib/twilio/client'
-import { generateOTP, hashOTP, isValidE164 } from '@/lib/utils'
+import { generateOTP, hashOTP, isValidE164, sanitizeName } from '@/lib/utils'
+import { otpSendLimiter } from '@/lib/rate-limit'
 
 const SendOtpSchema = z.object({
-  clinicId:     z.string().uuid(),
-  doctorId:     z.string().uuid(),
-  serviceId:    z.string().uuid(),
-  patientName:  z.string().min(2).max(100).trim(),
+  clinicId:  z.string().uuid(),
+  doctorId:  z.string().uuid(),
+  serviceId: z.string().uuid(),
+  // M-04 FIX: strip control chars + newlines at the Zod layer to prevent SMS injection
+  patientName: z
+    .string()
+    .min(2)
+    .max(100)
+    .trim()
+    .transform(sanitizeName),
   patientPhone: z.string().refine(isValidE164, {
-    message: 'Phone must be in E.164 format, e.g. +521554001234',
+    message: 'Phone must be E.164 format, e.g. +521554001234',
   }),
-  startsAt: z.string().datetime({ offset: true }), // ISO 8601 UTC string
+  startsAt: z.string().datetime({ offset: true }),
 })
 
 export async function POST(req: NextRequest) {
@@ -33,14 +40,32 @@ export async function POST(req: NextRequest) {
 
   const { clinicId, doctorId, serviceId, patientName, patientPhone, startsAt } = parsed.data
 
-  // Reject requests for slots in the past
   if (new Date(startsAt) < new Date()) {
     return NextResponse.json({ error: 'Cannot book a slot in the past' }, { status: 422 })
   }
 
+  // C-01 FIX: Rate limit by E.164 phone number — 3 OTP requests per 10 minutes
+  const { success: ratePassed, reset } = await otpSendLimiter.limit(patientPhone)
+  if (!ratePassed) {
+    const retryAfterSec = Math.ceil((reset - Date.now()) / 1000)
+    return NextResponse.json(
+      {
+        error: 'RATE_LIMITED',
+        message: 'Too many OTP requests. Please wait before requesting another code.',
+        retryAfter: retryAfterSec,
+      },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(retryAfterSec),
+          'X-RateLimit-Limit': '3',
+        },
+      }
+    )
+  }
+
   const supabase = createServiceClient()
 
-  // Verify clinic exists and fetch name for SMS
   const { data: clinic } = await supabase
     .from('clinics')
     .select('id, name')
@@ -54,8 +79,6 @@ export async function POST(req: NextRequest) {
   const otp     = generateOTP()
   const otpHash = hashOTP(otp)
 
-  // Atomically claim the slot — releases expired-pending blockers, then inserts.
-  // The EXCLUDE constraint on appointments prevents double-booking at the DB level.
   const { data: appointment, error: bookError } = await supabase.rpc('book_slot', {
     p_clinic_id:     clinicId,
     p_doctor_id:     doctorId,
@@ -79,22 +102,32 @@ export async function POST(req: NextRequest) {
 
   const appt = Array.isArray(appointment) ? appointment[0] : appointment
 
-  // Send OTP via Twilio. If this fails, cancel the just-created appointment
-  // so the slot is released back to the pool.
   try {
     await sendOtpSms({ to: patientPhone, otp, clinicName: clinic.name })
   } catch (smsError) {
     console.error('[POST /api/otp/send] Twilio error:', smsError)
-    await supabase
+
+    // M-03 FIX: log cancel UPDATE failures — never discard errors silently
+    const { error: cancelError } = await supabase
       .from('appointments')
       .update({ status: 'cancelled' })
       .eq('id', appt.id)
+
+    if (cancelError) {
+      // CRITICAL: slot rollback failed — appointment remains PENDING, blocking slot for ~5min until OTP expires
+      console.error(
+        '[POST /api/otp/send] CRITICAL: slot rollback failed after Twilio error.',
+        'Appointment ID:', appt.id,
+        'Will self-release when OTP expires (~5 min).',
+        cancelError
+      )
+    }
+
     return NextResponse.json(
       { error: 'SMS delivery failed. Please check your phone number and try again.' },
       { status: 502 }
     )
   }
 
-  // Never expose the OTP or its hash in the response
   return NextResponse.json({ appointmentId: appt.id }, { status: 201 })
 }
