@@ -1,0 +1,160 @@
+'use client'
+import { useState } from 'react'
+import { motion } from 'framer-motion'
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input }  from '@/components/ui/input'
+import { Label }  from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+import type { ServiceOption, DoctorOption } from './types'
+
+interface Props {
+  service:     ServiceOption
+  doctor:      DoctorOption
+  timezone:    string
+  slotStart:   string
+  onSubmit:    (name: string, phone: string) => Promise<void>
+  onBack:      () => void
+  isLoading:   boolean
+  error:       string | null
+}
+
+function formatSlotHuman(iso: string, timezone: string) {
+  const d = new Date(iso)
+  return d.toLocaleString('es-MX', {
+    timeZone:   timezone,
+    weekday:    'long',
+    day:        'numeric',
+    month:      'long',
+    hour:       '2-digit',
+    minute:     '2-digit',
+    hour12:     false,
+  })
+}
+
+export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, onBack, isLoading, error }: Props) {
+  const [name,      setName]      = useState('')
+  const [phone,     setPhone]     = useState('+52')
+  const [consented, setConsented] = useState(false)
+  const [touched,   setTouched]   = useState({ name: false, phone: false })
+
+  const nameValid  = name.trim().length >= 2
+  const phoneValid = /^\+[1-9]\d{7,14}$/.test(phone.trim())
+  const canSubmit  = nameValid && phoneValid && consented && !isLoading
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setTouched({ name: true, phone: true })
+    if (!canSubmit) return
+    onSubmit(name.trim(), phone.trim())
+  }
+
+  return (
+    <motion.div
+      key="step-patient"
+      initial={{ opacity: 0, x: 32 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -32 }}
+      transition={{ duration: 0.22, ease: 'easeInOut' }}
+      className="space-y-5"
+    >
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 -ml-1" disabled={isLoading}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Tus datos</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Para confirmar la cita te enviaremos un SMS.</p>
+        </div>
+      </div>
+
+      {/* Booking summary card */}
+      <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-1">
+        <p className="text-xs text-primary font-semibold uppercase tracking-wide">Resumen de tu cita</p>
+        <p className="text-sm font-semibold text-slate-800">{service.name}</p>
+        <p className="text-sm text-slate-600">{doctor.name}{doctor.specialty ? ` · ${doctor.specialty}` : ''}</p>
+        <p className="text-sm text-slate-600 capitalize">{formatSlotHuman(slotStart, timezone)}</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="patient-name">Nombre completo</Label>
+          <Input
+            id="patient-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => setTouched((p) => ({ ...p, name: true }))}
+            placeholder="Ej. Juan García López"
+            className={cn(touched.name && !nameValid && 'border-destructive focus-visible:ring-destructive')}
+          />
+          {touched.name && !nameValid && (
+            <p className="text-xs text-destructive">Introduce tu nombre completo.</p>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="patient-phone">Número de teléfono</Label>
+          <Input
+            id="patient-phone"
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            onBlur={() => setTouched((p) => ({ ...p, phone: true }))}
+            placeholder="+521234567890"
+            className={cn(
+              'font-mono',
+              touched.phone && !phoneValid && 'border-destructive focus-visible:ring-destructive'
+            )}
+          />
+          {touched.phone && !phoneValid ? (
+            <p className="text-xs text-destructive">Usa formato internacional, ej. +521234567890.</p>
+          ) : (
+            <p className="text-xs text-slate-400">Formato internacional con código de país (+52 para México).</p>
+          )}
+        </div>
+
+        {/* GDPR / Data-treatment consent */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+          <p className="text-xs text-slate-500 leading-relaxed">
+            <strong className="text-slate-700">Tratamiento de datos personales.</strong> Los datos que facilitas
+            (nombre y número de teléfono) serán tratados por esta clínica con la única finalidad de gestionar tu
+            cita y enviarte el código de verificación SMS. No se cederán a terceros. Puedes ejercer tus derechos
+            de acceso, rectificación, supresión y portabilidad contactando directamente con la clínica, de
+            conformidad con el <strong>Reglamento General de Protección de Datos (RGPD/GDPR)</strong> y la
+            normativa de protección de datos aplicable.
+          </p>
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={consented}
+              onChange={(e) => setConsented(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
+            />
+            <span className="text-xs text-slate-700 font-medium">
+              He leído y acepto el tratamiento de mis datos personales para gestionar esta cita. <span className="text-destructive">*</span>
+            </span>
+          </label>
+        </div>
+
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5"
+          >
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+            <p className="text-sm text-destructive">{error}</p>
+          </motion.div>
+        )}
+
+        <Button type="submit" className="w-full" size="lg" disabled={!canSubmit}>
+          {isLoading ? (
+            <><Loader2 className="h-4 w-4 animate-spin mr-2" />Enviando SMS…</>
+          ) : (
+            'Recibir código SMS'
+          )}
+        </Button>
+      </form>
+    </motion.div>
+  )
+}

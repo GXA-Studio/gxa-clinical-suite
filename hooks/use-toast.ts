@@ -38,7 +38,7 @@ function toast(props: Omit<Toast, 'id'>) {
       ...props,
       id,
       open: true,
-      onOpenChange: (open) => {
+      onOpenChange: (open: boolean) => {
         if (!open) {
           setTimeout(dismiss, TOAST_REMOVE_DELAY)
         }
