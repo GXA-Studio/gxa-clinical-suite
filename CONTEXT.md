@@ -1,7 +1,7 @@
 # CONTEXT — Medical Booking Boilerplate
 
 > **State of the Union** — update this file at the end of every major step and commit.  
-> Last updated: Step 3 (Route Handlers completed)
+> Last updated: Step 4 (Admin Dashboard completed)
 
 ---
 
@@ -131,13 +131,26 @@ INTERNAL_API_SECRET=         # 32-byte random hex, used to validate internal cal
 | 1 | Scaffolding (Next.js, config, Supabase clients, Twilio client, utils) | ✅ Done |
 | 2 | Database schema (`001_initial.sql`) — multi-shift schedules, EXCLUDE constraint, RPCs, RLS | ✅ Done |
 | 3 | Route Handlers (`/api/otp/send`, `/api/otp/verify`, `/api/slots`, `/api/webhooks/twilio`) | ✅ Done |
-| 4 | Admin Dashboard (Supabase Auth, services/doctors/schedules CRUD, appointment calendar) | ⏳ Pending |
+| 4 | Admin Dashboard (Supabase Auth, services/doctors/schedules CRUD, appointment calendar) | ✅ Done |
 | 5 | Patient Booking Flow (animated step-by-step with framer-motion, OTP modal) | ⏳ Pending |
+
+---
+
+## Admin Dashboard — Screen Inventory (Step 4)
+
+| Screen | Path | Component | Status |
+|---|---|---|---|
+| Login | `/auth/login` | `app/auth/login/page.tsx` | ✅ |
+| Dashboard | `/admin` | `app/(admin)/admin/page.tsx` | ✅ |
+| Services | `/admin/services` | `components/admin/services-client.tsx` | ✅ |
+| Doctors | `/admin/doctors` | `components/admin/doctors-client.tsx` | ✅ |
+| Schedules | `/admin/schedules` | `components/admin/schedule-editor.tsx` | ✅ |
+| Appointments | `/admin/appointments` | `components/admin/appointments-table.tsx` | ✅ |
 
 ---
 
 ## Next Action
 
-**Step 4**: Build the Admin Dashboard — protected routes under `app/(admin)/admin/`.  
-Screens: Login, Dashboard overview, Services CRUD, Doctors CRUD, Schedules (multi-shift calendar editor), Appointments list.  
-Stack: shadcn/ui DataTable + Calendar + Forms; Supabase Auth session via `@supabase/ssr`.
+**Step 5**: Patient Booking Flow — animated multi-step UI at `app/[clinicSlug]/`.  
+Steps: Service selection → Doctor selection → Date + slot picker → Patient details → OTP verification modal.  
+Stack: framer-motion AnimatePresence for step transitions, `/api/otp/send`, `/api/otp/verify`, `/api/slots`.

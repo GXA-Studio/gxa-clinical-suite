@@ -1,0 +1,241 @@
+'use client'
+import { useState, useTransition } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
+import { cancelAppointment } from '@/app/(admin)/admin/appointments/actions'
+import { Button } from '@/components/ui/button'
+import { Badge }  from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { toast } from '@/hooks/use-toast'
+import { XCircle, Loader2, CalendarDays, Phone, User, Stethoscope } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+
+type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled'
+
+interface AppointmentRow {
+  id: string
+  patient_name: string
+  patient_phone: string
+  starts_at: string
+  ends_at: string
+  status: AppointmentStatus
+  created_at: string
+  notes: string | null
+  doctors: { id: string; name: string; specialty: string | null } | null
+  services: { id: string; name: string; duration_minutes: number } | null
+}
+
+const STATUS_LABELS: Record<AppointmentStatus, string> = {
+  pending:   'Pendiente',
+  confirmed: 'Confirmada',
+  cancelled: 'Cancelada',
+}
+
+const STATUS_VARIANTS: Record<AppointmentStatus, 'secondary' | 'success' | 'destructive'> = {
+  pending:   'secondary',
+  confirmed: 'success',
+  cancelled: 'destructive',
+}
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('es-MX', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'America/Mexico_City',
+  })
+}
+
+export function AppointmentsTable({ appointments: initial }: { appointments: AppointmentRow[] }) {
+  const router      = useRouter()
+  const pathname    = usePathname()
+  const searchParams = useSearchParams()
+
+  const [cancelId, setCancelId]   = useState<string | null>(null)
+  const [pending,  start]         = useTransition()
+
+  const statusFilter = searchParams.get('status') ?? 'all'
+  const dateFilter   = searchParams.get('date') ?? ''
+
+  function updateFilter(key: string, value: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value && value !== 'all') params.set(key, value)
+    else params.delete(key)
+    router.push(`${pathname}?${params.toString()}`)
+  }
+
+  function handleCancel() {
+    if (!cancelId) return
+    start(async () => {
+      const result = await cancelAppointment(cancelId)
+      setCancelId(null)
+      if (result.error) {
+        toast({ variant: 'destructive', title: 'Error', description: result.error })
+        return
+      }
+      toast({ variant: 'success', title: 'Cita cancelada' })
+    })
+  }
+
+  const stats = {
+    total:     initial.length,
+    pending:   initial.filter((a) => a.status === 'pending').length,
+    confirmed: initial.filter((a) => a.status === 'confirmed').length,
+    cancelled: initial.filter((a) => a.status === 'cancelled').length,
+  }
+
+  return (
+    <>
+      {/* Stats strip */}
+      <div className="grid grid-cols-4 gap-3">
+        {([
+          { label: 'Total',      value: stats.total,     color: 'text-slate-700' },
+          { label: 'Pendientes', value: stats.pending,   color: 'text-amber-600' },
+          { label: 'Confirmadas',value: stats.confirmed, color: 'text-emerald-600' },
+          { label: 'Canceladas', value: stats.cancelled, color: 'text-rose-600' },
+        ] as const).map((s) => (
+          <Card key={s.label} className="border-slate-200/70">
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">{s.label}</p>
+              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-3 flex-wrap">
+        <Select value={statusFilter} onValueChange={(v) => updateFilter('status', v)}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="pending">Pendientes</SelectItem>
+            <SelectItem value="confirmed">Confirmadas</SelectItem>
+            <SelectItem value="cancelled">Canceladas</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="date"
+          className="w-44"
+          value={dateFilter}
+          onChange={(e) => updateFilter('date', e.target.value)}
+        />
+        {(statusFilter !== 'all' || dateFilter) && (
+          <Button variant="ghost" size="sm" onClick={() => router.push(pathname)}>
+            Limpiar filtros
+          </Button>
+        )}
+      </div>
+
+      <Card className="border-slate-200/70">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent border-slate-100">
+                <TableHead>Paciente</TableHead>
+                <TableHead>Médico / Servicio</TableHead>
+                <TableHead>Fecha y hora</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {initial.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                    No hay citas para los filtros seleccionados.
+                  </TableCell>
+                </TableRow>
+              ) : initial.map((a) => (
+                <TableRow key={a.id} className="border-slate-100">
+                  <TableCell>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-medium text-sm">{a.patient_name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Phone className="h-3 w-3 shrink-0" />
+                        {a.patient_phone}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <Stethoscope className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        {a.doctors?.name ?? '—'}
+                      </div>
+                      {a.services && (
+                        <Badge variant="outline" className="text-xs font-normal">
+                          {a.services.name} · {a.services.duration_minutes} min
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                      {formatDateTime(a.starts_at)}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_VARIANTS[a.status]}>
+                      {STATUS_LABELS[a.status]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {a.status !== 'cancelled' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                        onClick={() => setCancelId(a.id)}
+                        disabled={pending}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!cancelId} onOpenChange={(o) => !o && setCancelId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cancelar esta cita?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. El paciente no recibirá notificación automática.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancel}
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+              disabled={pending}
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sí, cancelar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
+}
