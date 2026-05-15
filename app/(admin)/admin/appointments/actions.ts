@@ -1,6 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { sendWhatsAppConfirmation } from '@/lib/twilio/client'
+import { getBaseUrl, isValidE164, sanitizeName } from '@/lib/utils'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -29,4 +31,83 @@ export async function cancelAppointment(id: string) {
 
   revalidatePath('/admin/appointments')
   return { success: true }
+}
+
+export interface BookManualFormData {
+  patientName: string
+  patientPhone: string
+  doctorId: string
+  serviceId: string
+  startsAt: string
+}
+
+export async function bookAppointmentManual(data: BookManualFormData) {
+  const { patientName, patientPhone, doctorId, serviceId, startsAt } = data
+
+  const name = sanitizeName(patientName)
+  if (name.length < 2) return { error: 'El nombre del paciente debe tener al menos 2 caracteres.' }
+  if (!isValidE164(patientPhone)) return { error: 'El teléfono debe estar en formato E.164 (p. ej. +34612345678).' }
+  if (!UUID_RE.test(doctorId)) return { error: 'Médico no válido.' }
+  if (!UUID_RE.test(serviceId)) return { error: 'Servicio no válido.' }
+  if (new Date(startsAt) < new Date()) return { error: 'La fecha y hora deben ser en el futuro.' }
+
+  const supabase = await createClient()
+  const clinicId = await getClinicId(supabase)
+
+  const { data: clinic } = await supabase
+    .from('clinics')
+    .select('name, timezone')
+    .eq('id', clinicId)
+    .single()
+  if (!clinic) return { error: 'Clínica no encontrada.' }
+
+  const serviceSupabase = createServiceClient()
+  const { data: appointment, error: bookError } = await serviceSupabase.rpc('book_slot_confirmed', {
+    p_clinic_id:     clinicId,
+    p_doctor_id:     doctorId,
+    p_service_id:    serviceId,
+    p_patient_name:  name,
+    p_patient_phone: patientPhone,
+    p_starts_at:     startsAt,
+  })
+
+  if (bookError) {
+    if (bookError.code === 'P0001') {
+      return { error: 'Ese horario ya no está disponible. Elige otro.' }
+    }
+    console.error('[bookAppointmentManual] RPC error:', bookError)
+    return { error: 'Error al crear la cita. Inténtalo de nuevo.' }
+  }
+
+  const appt = (Array.isArray(appointment) ? appointment[0] : appointment) as {
+    id: string
+    starts_at: string
+    cancellation_token: string
+  }
+
+  const { data: doctor } = await supabase
+    .from('doctors')
+    .select('name')
+    .eq('id', doctorId)
+    .single()
+
+  const baseUrl = getBaseUrl()
+
+  try {
+    await sendWhatsAppConfirmation({
+      to:                patientPhone,
+      patientName:       name,
+      clinicName:        (clinic as { name: string }).name,
+      doctorName:        doctor?.name ?? 'tu médico',
+      startsAt:          appt.starts_at,
+      timezone:          (clinic as { timezone: string }).timezone,
+      cancellationToken: appt.cancellation_token,
+      baseUrl,
+    })
+  } catch (err) {
+    console.error('[bookAppointmentManual] WhatsApp confirmation failed (booking still saved):', err)
+  }
+
+  revalidatePath('/admin/appointments')
+  return { success: true, appointmentId: appt.id }
 }

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { AppointmentsTable } from '@/components/admin/appointments-table'
+import { NewAppointmentDialog } from '@/components/admin/new-appointment-dialog'
 
 export default async function AppointmentsPage({
   searchParams,
@@ -33,21 +34,40 @@ export default async function AppointmentsPage({
   }
 
   if (date) {
-    // Filter by UTC day boundaries using starts_at
     const dayStart = new Date(date + 'T00:00:00.000Z').toISOString()
     const dayEnd   = new Date(date + 'T23:59:59.999Z').toISOString()
     query = query.gte('starts_at', dayStart).lte('starts_at', dayEnd)
   }
 
-  const { data: appointments } = await query
+  const [{ data: appointments }, { data: doctors }, { data: services }] = await Promise.all([
+    query,
+    supabase
+      .from('doctors')
+      .select('id, name, specialty, doctor_services(service_id)')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('services')
+      .select('id, name, duration_minutes')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('name'),
+  ])
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Citas</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Historial y gestión de todas las citas de la clínica.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Citas</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Historial y gestión de todas las citas de la clínica.
+          </p>
+        </div>
+        <NewAppointmentDialog
+          doctors={doctors ?? []}
+          services={services ?? []}
+        />
       </div>
       <AppointmentsTable appointments={appointments ?? []} timezone={timezone} />
     </div>
