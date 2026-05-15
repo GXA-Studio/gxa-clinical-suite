@@ -85,7 +85,7 @@ export async function sendWhatsAppConfirmation({
     `¡Hola ${patientName}! Cita confirmada en ${clinicName}.\n` +
     `Especialista: ${doctorName}. Fecha: ${dateStr}.\n\n` +
     `🔗 Cancelar con un clic: ${baseUrl}/cancel/${cancellationToken}\n\n` +
-    `Nota legal (AEPD): Tratamos tus datos según el RGPD. +info en nuestra web o responde a este chat.`
+    `Nota legal (AEPD): Tratamos tus datos según el RGPD. Responde INFO para más detalles.`
 
   const payload = { to: toWa, from: WHATSAPP_FROM, body: msgBody }
   console.log('[Twilio WA] sendWhatsAppConfirmation → payload:', JSON.stringify(payload))

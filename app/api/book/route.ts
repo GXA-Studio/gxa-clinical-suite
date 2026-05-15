@@ -109,7 +109,12 @@ export async function POST(req: NextRequest) {
     .eq('id', doctorId)
     .single()
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  // Priority: explicit env var → Vercel production domain → Vercel deployment URL → localhost fallback
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+    (process.env.VERCEL_URL                    ? `https://${process.env.VERCEL_URL}`                    : '') ||
+    'http://localhost:3000'
 
   sendWhatsAppConfirmation({
     to:                patientPhone,

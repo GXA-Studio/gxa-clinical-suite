@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
+import Link   from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input }  from '@/components/ui/input'
 import { Label }  from '@/components/ui/label'
@@ -119,7 +120,7 @@ export function StepPatient({
           <p className="text-xs text-slate-500 leading-relaxed">
             <strong className="text-slate-700">Información básica sobre protección de datos.</strong>{' '}
             Los datos facilitados (nombre y teléfono) serán tratados por esta clínica con la finalidad
-            exclusiva de gestionar tu cita y enviarte el código de verificación por SMS. No se cederán
+            exclusiva de gestionar tu cita y enviarte la confirmación por WhatsApp. No se cederán
             a terceros. Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición,
             limitación y portabilidad contactando directamente con la clínica, de conformidad con el{' '}
             <strong>Reglamento (UE) 2016/679 (RGPD)</strong> y la{' '}
@@ -133,7 +134,16 @@ export function StepPatient({
               className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
             />
             <span className="text-xs text-slate-700 font-medium">
-              He leído y acepto el tratamiento de mis datos personales para la gestión de esta cita.{' '}
+              He leído y acepto la{' '}
+              <Link
+                href="/privacidad"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 text-primary hover:text-primary/80 transition-colors"
+              >
+                política de privacidad
+              </Link>{' '}
+              y el tratamiento de mis datos personales para la gestión de esta cita.{' '}
               <span className="text-destructive">*</span>
             </span>
           </label>

@@ -3,7 +3,8 @@ import { validateRequest } from 'twilio'
 import twilio from 'twilio'
 import { createServiceClient } from '@/lib/supabase/server'
 
-const CANCEL_KEYWORDS = ['cancelar', 'anular', 'baja', 'cancel']
+const CANCEL_KEYWORDS  = ['cancelar', 'anular', 'baja', 'cancel']
+const PRIVACY_KEYWORDS = ['rgpd', 'privacidad', 'datos', 'info', 'legal', 'informacion']
 
 function stripWhatsappPrefix(from: string): string {
   return from.replace(/^whatsapp:/, '')
@@ -61,7 +62,14 @@ export async function POST(req: NextRequest) {
 
   const twiml = new twilio.twiml.MessagingResponse()
 
-  const hasCancel = CANCEL_KEYWORDS.some((kw) => bodyText.includes(kw))
+  const appBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+    (process.env.VERCEL_URL                    ? `https://${process.env.VERCEL_URL}`                    : '') ||
+    'http://localhost:3000'
+
+  const hasCancel  = CANCEL_KEYWORDS.some((kw) => bodyText.includes(kw))
+  const hasPrivacy = PRIVACY_KEYWORDS.some((kw) => bodyText.includes(kw))
 
   if (hasCancel) {
     const supabase = createServiceClient()
@@ -94,10 +102,17 @@ export async function POST(req: NextRequest) {
         twiml.message('✅ Cita anulada correctamente. El hueco ya está libre. ¡Hasta pronto!')
       }
     }
+  } else if (hasPrivacy) {
+    twiml.message(
+      'Para ejercer tus derechos de acceso, rectificación, cancelación u oposición sobre tus datos personales, ' +
+      'por favor envía un correo electrónico a studiogxa@gmail.com indicando tu número de teléfono.\n\n' +
+      `Puedes leer nuestra política de privacidad completa en: ${appBaseUrl}/privacidad`
+    )
   } else {
     twiml.message(
       '👋 Hola. ¿En qué puedo ayudarte?\n\n' +
       'Para *cancelar tu cita* escribe "cancelar".\n' +
+      'Para información sobre privacidad y RGPD escribe "info".\n' +
       'También puedes cancelar usando el enlace que te enviamos al confirmar.\n\n' +
       'Para cualquier otra consulta, contacta directamente con tu clínica.'
     )
