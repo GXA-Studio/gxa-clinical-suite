@@ -1,4 +1,5 @@
 'use client'
+import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { ChevronRight, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,7 +16,7 @@ function initials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
 }
 
-export function StepDoctor({ service, doctors, onSelect, onBack }: Props) {
+export const StepDoctor = memo(function StepDoctor({ service, doctors, onSelect, onBack }: Props) {
   return (
     <motion.div
       key="step-doctor"
@@ -59,4 +60,4 @@ export function StepDoctor({ service, doctors, onSelect, onBack }: Props) {
       </div>
     </motion.div>
   )
-}
+})

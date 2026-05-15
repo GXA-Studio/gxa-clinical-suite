@@ -218,6 +218,47 @@ PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app npx playwrigh
 
 ---
 
+## Métricas de Rendimiento (Perf Audit — 2026-05-15)
+
+### Cambios implementados
+
+| Fase | Área | Cambio | Impacto esperado |
+|---|---|---|---|
+| 1 | Server | `[clinicSlug]/page.tsx`: 2 queries secuenciales → 1 JOIN query | −1 round-trip a DB (~40-50% tiempo de carga) |
+| 2 | Cache | `lib/cache.ts`: Redis cache-aside TTL=300s en datos de clínica/servicios/médicos | ~0 ms en cache hit vs ~80-200 ms DB |
+| 2 | Cache | Invalidación automática en admin actions (servicios y médicos) | Consistencia garantizada en ≤300s sin acción manual |
+| 2 | Cache | `generateMetadata` también usa cache — warm-up de caché antes del render | Elimina doble consulta de clínica por request |
+| 3 | DB | `20260515_perf_indexes.sql`: 5 índices B-Tree en columnas de búsqueda frecuente | Consultas de disponibilidad: ms → µs |
+| 4 | Frontend | `React.memo` en `StepService` y `StepDoctor` | Evita re-renders durante transiciones de pasos |
+| 4 | Frontend | `useCallback` en `selectService`, `selectDoctor`, `selectSlot`, `goBack` | Referencias estables para que memo sea efectivo |
+| 4 | Frontend | Progress bar: `width` → `scaleX` (transform) | Elimina layout reflow en animación de progreso |
+
+### Arquitectura de caché
+
+```
+Paciente visita /{clinicSlug}
+  └─ generateMetadata → Redis GET mbb:booking:{slug}
+       ├─ HIT  → ~1ms, datos de clínica servidos
+       └─ MISS → Supabase JOIN query → Redis SET (TTL 300s)
+  └─ BookingPage → Redis GET mbb:booking:{slug}  (segundo HIT en mismo request)
+
+Admin edita servicio/médico
+  └─ Server Action → Supabase UPDATE → Redis DEL mbb:booking:{slug}
+                                        (próximo visitor recibe datos frescos)
+```
+
+### Índices añadidos
+
+| Índice | Tabla | Columnas | Uso |
+|---|---|---|---|
+| `idx_clinics_slug` | `clinics` | `(slug)` | Lookup por URL slug |
+| `idx_services_clinic_active` | `services` | `(clinic_id, is_active)` | Filtro de servicios activos |
+| `idx_doctors_clinic_active` | `doctors` | `(clinic_id, is_active)` | Filtro de médicos activos |
+| `idx_appointments_doctor_slots` | `appointments` | `(doctor_id, starts_at, ends_at) WHERE status<>'cancelled'` | RPC `get_available_slots` |
+| `idx_appointments_clinic_starts` | `appointments` | `(clinic_id, starts_at)` | Dashboard stats (hoy/semana) |
+
+---
+
 ## Git — Estado del Repositorio
 
 | Commit | Hash | Descripción |
@@ -233,6 +274,7 @@ PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app npx playwrigh
 | 9 | `a6abe29` | test(e2e): fix fixture page guard, slot two-click flow, production playwright config |
 | 10 | `33aecb9` | chore: final quality audit and typescript fixes |
 | 11 | `(pending)` | feat(db): add initial migration and update setup documentation |
+| 12 | `(pending)` | perf: implement parallel fetching, redis caching, and db indexing |
 
 **Remote**: `https://github.com/GXA-Studio/medical-booking-boilerplate.git`  
 **Vercel**: `https://medical-booking-boilerplate.vercel.app`
@@ -245,3 +287,4 @@ PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app npx playwrigh
 | `002_add_phone_constraint.sql` | Constraint E.164 en `appointments.patient_phone` |
 | `20260515000000_initial_schema.sql` | Consolidado v1 — schema completo + seed |
 | `20260515_final_schema.sql` | **✅ CERTIFICADO** — idempotente, trigger auto-perfil incluido, backfill, vinculación admin |
+| `20260515_perf_indexes.sql` | **✅ PERF** — 5 índices B-Tree para lookup frecuente (clínica, servicios, médicos, citas) |

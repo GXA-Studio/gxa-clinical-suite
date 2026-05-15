@@ -1,4 +1,5 @@
 'use client'
+import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { Clock, DollarSign, ChevronRight } from 'lucide-react'
 import type { ServiceOption, ClinicBookingData } from './types'
@@ -8,7 +9,7 @@ interface Props {
   onSelect: (service: ServiceOption) => void
 }
 
-export function StepService({ services, onSelect }: Props) {
+export const StepService = memo(function StepService({ services, onSelect }: Props) {
   return (
     <motion.div
       key="step-service"
@@ -57,4 +58,4 @@ export function StepService({ services, onSelect }: Props) {
       </div>
     </motion.div>
   )
-}
+})

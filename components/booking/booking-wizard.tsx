@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { StepService }   from './step-service'
 import { StepDoctor }    from './step-doctor'
@@ -14,7 +14,7 @@ const TOTAL_STEPS = 5  // service, doctor, slot, patient, otp (confirmed is term
 const STEP_LABELS = ['Servicio', 'Médico', 'Fecha', 'Datos', 'Código']
 
 function ProgressBar({ current }: { current: number }) {
-  const pct = Math.round((current / TOTAL_STEPS) * 100)
+  const scaleX = current / TOTAL_STEPS
   return (
     <div className="space-y-2 mb-6">
       <div className="flex items-center justify-between">
@@ -36,10 +36,11 @@ function ProgressBar({ current }: { current: number }) {
         <span className="text-[11px] text-slate-400 tabular-nums">{current + 1}/{TOTAL_STEPS}</span>
       </div>
       <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+        {/* scaleX + origin-left avoids layout reflow (width animation triggers reflow) */}
         <motion.div
-          className="h-full rounded-full bg-primary"
+          className="h-full w-full rounded-full bg-primary origin-left"
           initial={false}
-          animate={{ width: `${pct}%` }}
+          animate={{ scaleX }}
           transition={{ duration: 0.3, ease: 'easeInOut' }}
         />
       </div>
@@ -64,23 +65,23 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
   const [patientError, setPatientError] = useState<string | null>(null)
   const [isLoading,    setIsLoading]    = useState(false)
 
-  // ─── Step handlers ────────────────────────────────────────────
+  // ─── Step handlers (stable refs so React.memo on steps is effective) ──────
 
-  function selectService(service: ServiceOption) {
+  const selectService = useCallback((service: ServiceOption) => {
     setState((s) => ({ ...s, step: STEPS.DOCTOR, service, doctor: null, slotStart: null }))
-  }
+  }, [])
 
-  function selectDoctor(doctor: DoctorOption) {
+  const selectDoctor = useCallback((doctor: DoctorOption) => {
     setState((s) => ({ ...s, step: STEPS.SLOT, doctor, slotStart: null }))
-  }
+  }, [])
 
-  function selectSlot(slotStart: string) {
+  const selectSlot = useCallback((slotStart: string) => {
     setState((s) => ({ ...s, step: STEPS.PATIENT, slotStart }))
-  }
+  }, [])
 
-  function goBack() {
+  const goBack = useCallback(() => {
     setState((s) => ({ ...s, step: Math.max(0, s.step - 1) }))
-  }
+  }, [])
 
   async function sendOtp(name: string, phone: string) {
     setIsLoading(true)
