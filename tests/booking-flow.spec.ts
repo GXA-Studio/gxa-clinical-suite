@@ -1,85 +1,131 @@
 /**
- * E2E — Patient Booking Funnel
+ * E2E — Patient Booking Funnel (Time-First flow)
+ *
+ * Flow: Service → Slot (calendar date + time) → Doctor (if >1) → Patient → Confirmed
  *
  * Works against BOTH environments:
- *   - Local: PLAYWRIGHT_BASE_URL not set → webServer starts localhost:3000
+ *   - Local:      PLAYWRIGHT_BASE_URL not set → webServer starts localhost:3000
  *   - Production: PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app
  *
- * Fixture page (/test-fixture) renders BookingWizard with static data,
+ * Fixture page (/test-fixture) renders BookingWizard with static clinic data,
  * so NO Supabase database is required for these tests.
  *
  * API routes intercepted via page.route():
- *   GET  /api/slots     → returns two available time slots
- *   POST /api/otp/send  → returns a fake appointmentId (no SMS sent)
- *   POST /api/otp/verify → returns success (no DB verification)
+ *   GET  /api/available-days → activeDow: [] (all days enabled, no restrictions)
+ *   GET  /api/slots          → mock slots with doctor info (Mode B format)
+ *   POST /api/book           → returns appointmentId (no DB or Twilio touched)
  */
 
 import { test, expect, type Page } from '@playwright/test'
 
 const FIXTURE_URL = '/test-fixture'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Mock data ────────────────────────────────────────────────────────────────
 
-async function setupMocks(page: Page) {
+// Slots well in the future so the 15-min grace-period filter never hides them
+const SLOT_A = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+const SLOT_B = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()
+
+/** Two doctors → wizard shows the Doctor step */
+const MULTI_DOCTOR_SLOTS = {
+  slots: [
+    {
+      start:   SLOT_A,
+      doctors: [
+        { id: '00000000-0000-0000-0000-000000000020', name: 'Dra. Laura Martínez', specialty: 'Medicina General' },
+        { id: '00000000-0000-0000-0000-000000000021', name: 'Dr. Carlos Pérez',    specialty: 'Medicina Familiar' },
+      ],
+    },
+    {
+      start:   SLOT_B,
+      doctors: [
+        { id: '00000000-0000-0000-0000-000000000020', name: 'Dra. Laura Martínez', specialty: 'Medicina General' },
+      ],
+    },
+  ],
+}
+
+/** One doctor → wizard skips Doctor step, goes straight to Patient */
+const SINGLE_DOCTOR_SLOTS = {
+  slots: [
+    {
+      start:   SLOT_A,
+      doctors: [
+        { id: '00000000-0000-0000-0000-000000000022', name: 'Dr. Miguel Torres', specialty: 'Cardiología' },
+      ],
+    },
+    {
+      start:   SLOT_B,
+      doctors: [
+        { id: '00000000-0000-0000-0000-000000000022', name: 'Dr. Miguel Torres', specialty: 'Cardiología' },
+      ],
+    },
+  ],
+}
+
+// ─── Mock helpers ─────────────────────────────────────────────────────────────
+
+async function setupMocks(page: Page, slots = SINGLE_DOCTOR_SLOTS) {
+  // activeDow: [] → disabledMatcher returns false for all future dates (nothing disabled)
+  await page.route('**/api/available-days**', (route) =>
+    route.fulfill({
+      status:      200,
+      contentType: 'application/json',
+      body:        JSON.stringify({ activeDow: [] }),
+    })
+  )
+  // Mode-B slot response: array of { start, doctors[] }
   await page.route('**/api/slots**', (route) =>
     route.fulfill({
-      status: 200,
+      status:      200,
       contentType: 'application/json',
-      body: JSON.stringify({ slots: ['2026-06-15T15:00:00.000Z', '2026-06-15T16:00:00.000Z'] }),
+      body:        JSON.stringify(slots),
     })
   )
-  await page.route('**/api/otp/send', (route) =>
+  // Direct booking (no OTP)
+  await page.route('**/api/book', (route) =>
     route.fulfill({
-      status: 200,
+      status:      200,
       contentType: 'application/json',
-      body: JSON.stringify({ appointmentId: 'mock-appt-abc123' }),
-    })
-  )
-  await page.route('**/api/otp/verify', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ ok: true }),
+      body:        JSON.stringify({ appointmentId: 'mock-appt-abc123' }),
     })
   )
 }
 
+// ─── Navigation helpers ───────────────────────────────────────────────────────
+
+/** Click the first non-disabled day in the react-day-picker calendar */
+async function selectFirstCalendarDay(page: Page) {
+  // react-day-picker v9 renders days as <button> inside <td> cells.
+  // Only past dates are disabled (attribute "disabled") when activeDow is mocked empty.
+  const dayBtn = page.locator('td button:not([disabled])').first()
+  await expect(dayBtn).toBeVisible({ timeout: 8_000 })
+  await dayBtn.click()
+}
+
 /**
- * The slot step requires TWO interactions:
- *  1. Click a time button (HH:MM) → highlights the slot
- *  2. Click the "Confirmar HH:MM" CTA that appears → advances to patient step
+ * Once a day is selected, click the first time slot button then the
+ * sticky "Confirmar HH:MM" CTA that appears beneath it.
  */
-async function selectFirstSlot(page: Page) {
-  // Wait for the slot grid to load (mocked response)
+async function selectFirstTimeSlot(page: Page) {
+  // Time slot buttons display HH:MM text (formatSlotTime uses 24h, es-ES locale)
   const slotBtn = page.locator('button', { hasText: /^\d{2}:\d{2}$/ }).first()
-  await expect(slotBtn).toBeVisible({ timeout: 10_000 })
+  await expect(slotBtn).toBeVisible({ timeout: 8_000 })
   await slotBtn.click()
 
-  // "Confirmar HH:MM" CTA appears after selection
   const confirmBtn = page.locator('button', { hasText: /^Confirmar \d{2}:\d{2}$/ })
   await expect(confirmBtn).toBeVisible()
   await confirmBtn.click()
 }
 
-/** Navigate to patient data step from the fixture page */
+/** Navigate to the Patient step via the single-doctor path (Cardiología). */
 async function goToPatientStep(page: Page) {
   await page.goto(FIXTURE_URL)
-  await page.getByText('Consulta General').click()
-  await expect(page.getByText('¿Con quién?')).toBeVisible()
-  await page.getByText('Dra. Laura Martínez').click()
+  await page.getByText('Cardiología').click()
   await expect(page.getByText('Elige fecha y hora')).toBeVisible()
-  await selectFirstSlot(page)
+  await selectFirstCalendarDay(page)
+  await selectFirstTimeSlot(page)  // single-doctor slot → skips Doctor step
   await expect(page.getByText('Tus datos')).toBeVisible()
-}
-
-/** Navigate to OTP step from the fixture page */
-async function goToOtpStep(page: Page) {
-  await goToPatientStep(page)
-  await page.getByLabel('Nombre completo').fill('Ana Prueba García')
-  await page.getByLabel('Número de teléfono').fill('+521234567890')
-  await page.getByRole('checkbox').check()
-  await page.getByRole('button', { name: 'Recibir código SMS' }).click()
-  await expect(page.getByText('Verifica tu número')).toBeVisible()
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -95,114 +141,102 @@ test.describe('Booking Funnel', () => {
     await expect(page.getByText('Cardiología')).toBeVisible()
   })
 
-  test('Step 2 — selecting a service shows doctor list', async ({ page }) => {
+  test('Step 2 — selecting a service shows the slot calendar', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
 
-    await expect(page.getByText('¿Con quién?')).toBeVisible()
-    await expect(page.getByText('Dra. Laura Martínez')).toBeVisible()
-    await expect(page.getByText('Dr. Carlos Pérez')).toBeVisible()
+    // Time-First flow: next step is slot calendar, not doctor list
+    await expect(page.getByText('Elige fecha y hora')).toBeVisible()
+    await expect(page.getByText('Consulta General')).toBeVisible() // service name shown in subtitle
+    // Calendar grid must appear (available-days API returns immediately)
+    await expect(page.locator('td button').first()).toBeVisible({ timeout: 8_000 })
   })
 
-  test('Step 3 — selecting a doctor fetches and shows slot grid', async ({ page }) => {
+  test('Step 3 — selecting a calendar day loads time-slot grid', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
-    await page.getByText('Dra. Laura Martínez').click()
-
     await expect(page.getByText('Elige fecha y hora')).toBeVisible()
 
-    // Slot buttons appear after mock API responds
+    await selectFirstCalendarDay(page)
+
+    // Time slot buttons (HH:MM) must appear after day selection
     const slotBtn = page.locator('button', { hasText: /^\d{2}:\d{2}$/ }).first()
-    await expect(slotBtn).toBeVisible({ timeout: 10_000 })
+    await expect(slotBtn).toBeVisible({ timeout: 8_000 })
   })
 
-  test('Step 3b — clicking a slot shows Confirmar CTA', async ({ page }) => {
+  test('Step 3b — clicking a time slot shows the Confirmar CTA', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
-    await page.getByText('Dra. Laura Martínez').click()
+    await expect(page.getByText('Elige fecha y hora')).toBeVisible()
+    await selectFirstCalendarDay(page)
 
     const slotBtn = page.locator('button', { hasText: /^\d{2}:\d{2}$/ }).first()
-    await expect(slotBtn).toBeVisible({ timeout: 10_000 })
+    await expect(slotBtn).toBeVisible({ timeout: 8_000 })
     await slotBtn.click()
 
-    // "Confirmar HH:MM" CTA must appear after slot selection
+    // "Confirmar HH:MM" sticky CTA must appear after slot selection
     await expect(page.locator('button', { hasText: /^Confirmar \d{2}:\d{2}$/ })).toBeVisible()
   })
 
-  test('Step 4 — GDPR checkbox is mandatory to enable submit button', async ({ page }) => {
+  test('Step 4 — confirming a slot with multiple doctors shows Elige profesional', async ({ page }) => {
+    // Use the multi-doctor slot mock so the wizard enters the Doctor step
+    await setupMocks(page, MULTI_DOCTOR_SLOTS)
+    await page.goto(FIXTURE_URL)
+
+    await page.getByText('Consulta General').click()
+    await expect(page.getByText('Elige fecha y hora')).toBeVisible()
+    await selectFirstCalendarDay(page)
+    await selectFirstTimeSlot(page)  // first slot has 2 doctors → Doctor step
+
+    await expect(page.getByText('Elige profesional')).toBeVisible()
+    await expect(page.getByText('Dra. Laura Martínez')).toBeVisible()
+    await expect(page.getByText('Dr. Carlos Pérez')).toBeVisible()
+    // "Any doctor" option is always present
+    await expect(page.getByText('Cualquier profesional disponible')).toBeVisible()
+  })
+
+  test('Step 5 — GDPR checkbox is mandatory to enable the submit button', async ({ page }) => {
     await setupMocks(page)
     await goToPatientStep(page)
 
-    const submitBtn = page.getByRole('button', { name: 'Recibir código SMS' })
+    const submitBtn = page.getByRole('button', { name: 'Confirmar cita' })
 
-    // ── CRITICAL: button must be DISABLED without consent ───────────────────
+    // Empty form: disabled
     await expect(submitBtn).toBeDisabled()
 
-    // Fill valid name and phone
     await page.getByLabel('Nombre completo').fill('Ana Prueba García')
     await page.getByLabel('Número de teléfono').fill('+521234567890')
 
-    // Still disabled — consent not given
+    // Name + phone filled but no GDPR consent: still disabled
     await expect(submitBtn).toBeDisabled()
 
-    // Grant GDPR consent
+    // Grant consent
     await page.getByRole('checkbox').check()
 
-    // NOW the button must be enabled
+    // Now enabled
     await expect(submitBtn).toBeEnabled()
   })
 
-  test('Step 5 — submitting valid data triggers OTP step', async ({ page }) => {
+  test('Step 6 — submitting valid patient data goes directly to Confirmed (no OTP)', async ({ page }) => {
     await setupMocks(page)
     await goToPatientStep(page)
 
     await page.getByLabel('Nombre completo').fill('Ana Prueba García')
     await page.getByLabel('Número de teléfono').fill('+521234567890')
     await page.getByRole('checkbox').check()
-    await page.getByRole('button', { name: 'Recibir código SMS' }).click()
+    await page.getByRole('button', { name: 'Confirmar cita' }).click()
 
-    await expect(page.getByText('Verifica tu número')).toBeVisible()
-    // 6 individual digit inputs
-    await expect(page.locator('input[inputmode="numeric"]')).toHaveCount(6)
-  })
-
-  test('Step 6 — OTP inputs accept individual digit entry with auto-advance', async ({ page }) => {
-    await setupMocks(page)
-    await goToOtpStep(page)
-
-    const inputs = page.locator('input[inputmode="numeric"]')
-
-    // Type digits — each input should hold exactly one character
-    await inputs.nth(0).fill('1')
-    await inputs.nth(1).fill('2')
-    await inputs.nth(2).fill('3')
-
-    await expect(inputs.nth(0)).toHaveValue('1')
-    await expect(inputs.nth(1)).toHaveValue('2')
-    await expect(inputs.nth(2)).toHaveValue('3')
-  })
-
-  test('Step 7 — entering 6-digit OTP shows confirmed screen', async ({ page }) => {
-    await setupMocks(page)
-    await goToOtpStep(page)
-
-    const inputs = page.locator('input[inputmode="numeric"]')
-    const code = ['1', '2', '3', '4', '5', '6']
-    for (let i = 0; i < 6; i++) {
-      await inputs.nth(i).fill(code[i])
-    }
-
-    // Mock verifies instantly → confirmed screen
+    // Direct confirmation — no OTP step
     await expect(page.getByText('¡Cita confirmada!')).toBeVisible({ timeout: 10_000 })
   })
 
-  test('Full funnel — happy path end-to-end', async ({ page }) => {
+  test('Full funnel — happy path end-to-end (Time-First flow)', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
@@ -210,36 +244,31 @@ test.describe('Booking Funnel', () => {
     await expect(page.getByText('¿Qué servicio necesitas?')).toBeVisible()
     await page.getByText('Cardiología').click()
 
-    // Step 2: Select doctor
-    await expect(page.getByText('¿Con quién?')).toBeVisible()
-    await page.getByText('Dr. Miguel Torres').click()
-
-    // Step 3: Select slot (two-click flow: pick + confirm)
+    // Step 2: Calendar appears
     await expect(page.getByText('Elige fecha y hora')).toBeVisible()
-    await selectFirstSlot(page)
+    await selectFirstCalendarDay(page)
 
-    // Step 4: Patient data — button gated by GDPR checkbox
+    // Step 3: Select time slot + confirm (single doctor → skips Doctor step)
+    const slotBtn = page.locator('button', { hasText: /^\d{2}:\d{2}$/ }).first()
+    await expect(slotBtn).toBeVisible({ timeout: 8_000 })
+    await slotBtn.click()
+    await expect(page.locator('button', { hasText: /^Confirmar \d{2}:\d{2}$/ })).toBeVisible()
+    await page.locator('button', { hasText: /^Confirmar \d{2}:\d{2}$/ }).click()
+
+    // Step 4: Patient data — submit gated by GDPR consent
     await expect(page.getByText('Tus datos')).toBeVisible()
-    const submitBtn = page.getByRole('button', { name: 'Recibir código SMS' })
+    const submitBtn = page.getByRole('button', { name: 'Confirmar cita' })
     await expect(submitBtn).toBeDisabled()
 
     await page.getByLabel('Nombre completo').fill('Carlos E2E')
     await page.getByLabel('Número de teléfono').fill('+521111111111')
-    await expect(submitBtn).toBeDisabled()  // phone+name filled, but no checkbox yet
+    await expect(submitBtn).toBeDisabled()  // phone+name filled, but no consent yet
 
     await page.getByRole('checkbox').check()
     await expect(submitBtn).toBeEnabled()
     await submitBtn.click()
 
-    // Step 5: OTP entry
-    await expect(page.getByText('Verifica tu número')).toBeVisible()
-    const inputs = page.locator('input[inputmode="numeric"]')
-    await expect(inputs).toHaveCount(6)
-    for (let i = 0; i < 6; i++) {
-      await inputs.nth(i).fill(String(i + 1))
-    }
-
-    // Step 6: Confirmed
+    // Step 5: Confirmed — direct, no OTP
     await expect(page.getByText('¡Cita confirmada!')).toBeVisible({ timeout: 10_000 })
   })
 
