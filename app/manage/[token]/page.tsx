@@ -13,10 +13,13 @@ export default async function ManagePage({ params }: { params: Promise<{ token: 
   const { token } = await params
   const supabase  = createServiceClient()
 
+  // doctor_id and service_id are selected as RAW COLUMNS (not just via join aliases)
+  // so they are always present on appt regardless of join behaviour.
   const { data: appt } = await supabase
     .from('appointments')
     .select(`
       id, starts_at, ends_at, status, cancellation_token, patient_name,
+      doctor_id, service_id,
       doctors  ( id, name, specialty ),
       services ( id, name, duration_minutes, price, description ),
       clinics  ( id, name, timezone )
@@ -45,6 +48,9 @@ export default async function ManagePage({ params }: { params: Promise<{ token: 
         clinic={clinic}
         doctor={doctor}
         service={service}
+        // Pass raw FK columns as the authoritative IDs for the slot fetcher
+        doctorId={appt.doctor_id}
+        serviceId={appt.service_id}
         isActive={isActive}
         isPast={isPast}
       />
