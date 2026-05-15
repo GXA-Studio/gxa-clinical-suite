@@ -1,5 +1,7 @@
 'use server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { sendCancellationWhatsApp, sendRescheduleWhatsApp } from '@/lib/twilio/client'
+import { getBaseUrl } from '@/lib/utils'
 
 export async function cancelByToken(token: string): Promise<{ success: boolean; error?: string }> {
   const supabase = createServiceClient()
@@ -10,11 +12,25 @@ export async function cancelByToken(token: string): Promise<{ success: boolean; 
     .eq('cancellation_token', token)
     .eq('status', 'confirmed')
     .gt('starts_at', new Date().toISOString())
-    .select('id')
+    .select('id, patient_name, patient_phone, starts_at, clinics(name, timezone)')
     .single()
 
   if (error || !data) {
     return { success: false, error: 'No se pudo cancelar la cita. Es posible que ya esté cancelada o haya pasado.' }
+  }
+
+  const clinic = Array.isArray(data.clinics) ? data.clinics[0] : data.clinics as { name: string; timezone: string } | null
+
+  try {
+    await sendCancellationWhatsApp({
+      to:          data.patient_phone as string,
+      patientName: data.patient_name as string,
+      clinicName:  clinic?.name ?? 'la clínica',
+      startsAt:    data.starts_at as string,
+      timezone:    clinic?.timezone ?? 'Europe/Madrid',
+    })
+  } catch (err) {
+    console.error('[cancelByToken] WhatsApp notification failed:', err)
   }
 
   return { success: true }
@@ -48,5 +64,33 @@ export async function rescheduleAppointment(
   }
 
   const appt = Array.isArray(data) ? data[0] : data as { starts_at: string }
-  return { success: true, newStartsAt: appt?.starts_at }
+  const confirmedStartsAt = appt?.starts_at ?? newStartsAt
+
+  const { data: apptDetails } = await supabase
+    .from('appointments')
+    .select('patient_name, patient_phone, clinics(name, timezone)')
+    .eq('cancellation_token', token)
+    .single()
+
+  if (apptDetails) {
+    const clinic = Array.isArray(apptDetails.clinics)
+      ? apptDetails.clinics[0]
+      : apptDetails.clinics as { name: string; timezone: string } | null
+
+    try {
+      await sendRescheduleWhatsApp({
+        to:                apptDetails.patient_phone as string,
+        patientName:       apptDetails.patient_name as string,
+        clinicName:        clinic?.name ?? 'la clínica',
+        startsAt:          confirmedStartsAt,
+        timezone:          clinic?.timezone ?? 'Europe/Madrid',
+        cancellationToken: token,
+        baseUrl:           getBaseUrl(),
+      })
+    } catch (err) {
+      console.error('[rescheduleAppointment] WhatsApp notification failed:', err)
+    }
+  }
+
+  return { success: true, newStartsAt: confirmedStartsAt }
 }

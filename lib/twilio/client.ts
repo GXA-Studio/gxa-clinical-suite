@@ -105,6 +105,51 @@ export async function sendWhatsAppConfirmation({
   }
 }
 
+export interface SendCancellationWhatsAppParams {
+  to: string
+  patientName: string
+  clinicName: string
+  startsAt: string
+  timezone: string
+}
+
+export async function sendCancellationWhatsApp({
+  to, patientName, clinicName, startsAt, timezone,
+}: SendCancellationWhatsAppParams): Promise<void> {
+  const dateStr = formatSmsDateTime(startsAt, timezone)
+  await getClient().messages.create({
+    to:   `whatsapp:${to}`,
+    from: WHATSAPP_FROM,
+    body:
+      `Hola ${patientName}, tu cita en ${clinicName} para el día ${dateStr} ha sido cancelada correctamente. ` +
+      `Esperamos verte pronto.`,
+  })
+}
+
+export interface SendRescheduleWhatsAppParams {
+  to: string
+  patientName: string
+  clinicName: string
+  startsAt: string
+  timezone: string
+  cancellationToken: string
+  baseUrl: string
+}
+
+export async function sendRescheduleWhatsApp({
+  to, patientName, clinicName, startsAt, timezone, cancellationToken, baseUrl,
+}: SendRescheduleWhatsAppParams): Promise<void> {
+  const dateStr  = formatSmsDateTime(startsAt, timezone)
+  const manageUrl = `${baseUrl}/manage/${cancellationToken}`
+  await getClient().messages.create({
+    to:   `whatsapp:${to}`,
+    from: WHATSAPP_FROM,
+    body:
+      `¡Cita actualizada! Tu nueva reserva en ${clinicName} es el ${dateStr}.\n\n` +
+      `⚙️ Gestionar cita (Modificar o Cancelar): ${manageUrl}`,
+  })
+}
+
 export interface SendWhatsAppReminderParams {
   to: string
   patientName: string
