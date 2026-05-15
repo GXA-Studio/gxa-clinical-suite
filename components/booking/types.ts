@@ -12,6 +12,11 @@ export interface DoctorOption {
   specialty: string | null
 }
 
+export interface SlotWithDoctors {
+  start:   string         // ISO UTC timestamp
+  doctors: DoctorOption[]
+}
+
 export interface ClinicBookingData {
   id: string
   name: string
@@ -20,10 +25,11 @@ export interface ClinicBookingData {
 }
 
 export interface BookingState {
-  step: number
+  step:          number
   service:       ServiceOption | null
-  doctor:        DoctorOption | null
-  slotStart:     string | null   // ISO UTC
+  slotStart:     string | null       // ISO UTC
+  slotDoctors:   DoctorOption[]      // doctors available for chosen slot
+  doctor:        DoctorOption | null // resolved doctor (auto or chosen)
   patientName:   string
   patientPhone:  string
   appointmentId: string | null

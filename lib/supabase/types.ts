@@ -1,6 +1,5 @@
 // AUTO-GENERATED — do not edit manually.
 // Regenerate with: npm run db:types
-// Source of truth is supabase/migrations/001_initial.sql
 
 export type Json =
   | string
@@ -11,6 +10,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   public: {
     Tables: {
       appointments: {
@@ -27,7 +31,7 @@ export type Database = {
           patient_phone: string
           service_id: string
           starts_at: string
-          status: Database['public']['Enums']['appointment_status']
+          status: Database["public"]["Enums"]["appointment_status"]
         }
         Insert: {
           clinic_id: string
@@ -42,7 +46,7 @@ export type Database = {
           patient_phone: string
           service_id: string
           starts_at: string
-          status?: Database['public']['Enums']['appointment_status']
+          status?: Database["public"]["Enums"]["appointment_status"]
         }
         Update: {
           clinic_id?: string
@@ -57,17 +61,36 @@ export type Database = {
           patient_phone?: string
           service_id?: string
           starts_at?: string
-          status?: Database['public']['Enums']['appointment_status']
+          status?: Database["public"]["Enums"]["appointment_status"]
         }
         Relationships: [
-          { foreignKeyName: 'appointments_clinic_id_fkey'; columns: ['clinic_id']; referencedRelation: 'clinics'; referencedColumns: ['id'] },
-          { foreignKeyName: 'appointments_doctor_id_fkey'; columns: ['doctor_id']; referencedRelation: 'doctors'; referencedColumns: ['id'] },
-          { foreignKeyName: 'appointments_service_id_fkey'; columns: ['service_id']; referencedRelation: 'services'; referencedColumns: ['id'] },
+          {
+            foreignKeyName: "appointments_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
         ]
       }
       clinics: {
         Row: {
           address: string | null
+          admin_id: string | null
           created_at: string
           id: string
           name: string
@@ -79,6 +102,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          admin_id?: string | null
           created_at?: string
           id?: string
           name: string
@@ -90,6 +114,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          admin_id?: string | null
           created_at?: string
           id?: string
           name?: string
@@ -115,8 +140,20 @@ export type Database = {
           service_id?: string
         }
         Relationships: [
-          { foreignKeyName: 'doctor_services_doctor_id_fkey'; columns: ['doctor_id']; referencedRelation: 'doctors'; referencedColumns: ['id'] },
-          { foreignKeyName: 'doctor_services_service_id_fkey'; columns: ['service_id']; referencedRelation: 'services'; referencedColumns: ['id'] },
+          {
+            foreignKeyName: "doctor_services_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "doctor_services_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
         ]
       }
       doctors: {
@@ -151,7 +188,13 @@ export type Database = {
           specialty?: string | null
         }
         Relationships: [
-          { foreignKeyName: 'doctors_clinic_id_fkey'; columns: ['clinic_id']; referencedRelation: 'clinics'; referencedColumns: ['id'] },
+          {
+            foreignKeyName: "doctors_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
         ]
       }
       profiles: {
@@ -177,8 +220,13 @@ export type Database = {
           role?: string
         }
         Relationships: [
-          { foreignKeyName: 'profiles_clinic_id_fkey'; columns: ['clinic_id']; referencedRelation: 'clinics'; referencedColumns: ['id'] },
-          { foreignKeyName: 'profiles_id_fkey'; columns: ['id']; referencedRelation: 'users'; referencedColumns: ['id'] },
+          {
+            foreignKeyName: "profiles_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
         ]
       }
       schedules: {
@@ -207,7 +255,13 @@ export type Database = {
           start_time?: string
         }
         Relationships: [
-          { foreignKeyName: 'schedules_doctor_id_fkey'; columns: ['doctor_id']; referencedRelation: 'doctors'; referencedColumns: ['id'] },
+          {
+            foreignKeyName: "schedules_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
         ]
       }
       services: {
@@ -242,65 +296,233 @@ export type Database = {
           price?: number | null
         }
         Relationships: [
-          { foreignKeyName: 'services_clinic_id_fkey'; columns: ['clinic_id']; referencedRelation: 'clinics'; referencedColumns: ['id'] },
+          {
+            foreignKeyName: "services_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
-    Views: { [_ in never]: never }
+    Views: {
+      [_ in never]: never
+    }
     Functions: {
       book_slot: {
         Args: {
           p_clinic_id: string
           p_doctor_id: string
-          p_service_id: string
+          p_otp_code_hash: string
           p_patient_name: string
           p_patient_phone: string
+          p_service_id: string
           p_starts_at: string
-          p_otp_code_hash: string
         }
-        Returns: Database['public']['Tables']['appointments']['Row']
+        Returns: {
+          clinic_id: string
+          created_at: string
+          doctor_id: string
+          ends_at: string
+          id: string
+          notes: string | null
+          otp_code_hash: string | null
+          otp_expires_at: string | null
+          patient_name: string
+          patient_phone: string
+          service_id: string
+          starts_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       confirm_appointment: {
-        Args: {
-          p_appointment_id: string
-          p_otp_code_hash: string
+        Args: { p_appointment_id: string; p_otp_code_hash: string }
+        Returns: {
+          clinic_id: string
+          created_at: string
+          doctor_id: string
+          ends_at: string
+          id: string
+          notes: string | null
+          otp_code_hash: string | null
+          otp_expires_at: string | null
+          patient_name: string
+          patient_phone: string
+          service_id: string
+          starts_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
         }
-        Returns: Database['public']['Tables']['appointments']['Row']
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      get_active_dow_for_service: {
+        Args: { p_service_id: string }
+        Returns: {
+          day_of_week: number
+        }[]
       }
       get_available_slots: {
-        Args: {
-          p_doctor_id: string
-          p_service_id: string
-          p_date: string
-        }
-        Returns: { slot_start: string }[]
+        Args: { p_date: string; p_doctor_id: string; p_service_id: string }
+        Returns: {
+          slot_start: string
+        }[]
+      }
+      get_slots_for_service: {
+        Args: { p_date: string; p_service_id: string }
+        Returns: {
+          doctor_id: string
+          doctor_name: string
+          doctor_specialty: string
+          slot_start: string
+        }[]
       }
     }
     Enums: {
-      appointment_status: 'cancelled' | 'confirmed' | 'pending'
+      appointment_status: "pending" | "confirmed" | "cancelled"
     }
-    CompositeTypes: { [_ in never]: never }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
 
-// Convenience type aliases
-export type Tables<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Row']
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-export type TablesInsert<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Insert']
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
-export type TablesUpdate<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Update']
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
 
-export type Enums<T extends keyof Database['public']['Enums']> =
-  Database['public']['Enums'][T]
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
 
-// Domain type aliases for use throughout the app
-export type Clinic = Tables<'clinics'>
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+// Convenience row aliases (used by admin components)
 export type Service = Tables<'services'>
-export type Doctor = Tables<'doctors'>
-export type Schedule = Tables<'schedules'>
-export type Appointment = Tables<'appointments'>
-export type Profile = Tables<'profiles'>
-export type AppointmentStatus = Enums<'appointment_status'>
+export type Doctor  = Tables<'doctors'>
+export type Clinic  = Tables<'clinics'>
+
+export const Constants = {
+  public: {
+    Enums: {
+      appointment_status: ["pending", "confirmed", "cancelled"],
+    },
+  },
+} as const

@@ -13,7 +13,7 @@ interface Props {
 }
 
 function formatConfirmed(iso: string, timezone: string) {
-  return new Date(iso).toLocaleString('es-MX', {
+  return new Date(iso).toLocaleString('es-ES', {
     timeZone:  timezone,
     weekday:   'long',
     day:       'numeric',

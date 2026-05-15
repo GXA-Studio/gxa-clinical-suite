@@ -2,16 +2,18 @@
 import { useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { StepService }   from './step-service'
-import { StepDoctor }    from './step-doctor'
 import { StepSlot }      from './step-slot'
+import { StepDoctor }    from './step-doctor'
 import { StepPatient }   from './step-patient'
 import { StepOtp }       from './step-otp'
 import { StepConfirmed } from './step-confirmed'
-import type { ClinicBookingData, ServiceOption, DoctorOption, BookingState } from './types'
+import type { ClinicBookingData, ServiceOption, DoctorOption, SlotWithDoctors, BookingState } from './types'
 
-const TOTAL_STEPS = 5  // service, doctor, slot, patient, otp (confirmed is terminal)
+// New Time-First flow: Service → Slot (calendar) → Doctor (if >1) → Patient → OTP → Confirmed
+const STEPS = { SERVICE: 0, SLOT: 1, DOCTOR: 2, PATIENT: 3, OTP: 4, CONFIRMED: 5 }
 
-const STEP_LABELS = ['Servicio', 'Médico', 'Fecha', 'Datos', 'Código']
+const TOTAL_STEPS  = 5
+const STEP_LABELS  = ['Servicio', 'Fecha', 'Médico', 'Datos', 'Código']
 
 function ProgressBar({ current }: { current: number }) {
   const scaleX = current / TOTAL_STEPS
@@ -48,14 +50,13 @@ function ProgressBar({ current }: { current: number }) {
   )
 }
 
-const STEPS = { SERVICE: 0, DOCTOR: 1, SLOT: 2, PATIENT: 3, OTP: 4, CONFIRMED: 5 }
-
 export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
   const [state, setState] = useState<BookingState>({
     step:          STEPS.SERVICE,
     service:       null,
-    doctor:        null,
     slotStart:     null,
+    slotDoctors:   [],
+    doctor:        null,
     patientName:   '',
     patientPhone:  '',
     appointmentId: null,
@@ -65,22 +66,45 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
   const [patientError, setPatientError] = useState<string | null>(null)
   const [isLoading,    setIsLoading]    = useState(false)
 
-  // ─── Step handlers (stable refs so React.memo on steps is effective) ──────
+  // ─── Step handlers ────────────────────────────────────────────
 
   const selectService = useCallback((service: ServiceOption) => {
-    setState((s) => ({ ...s, step: STEPS.DOCTOR, service, doctor: null, slotStart: null }))
+    setState((s) => ({ ...s, step: STEPS.SLOT, service, slotStart: null, slotDoctors: [], doctor: null }))
+  }, [])
+
+  const selectSlot = useCallback((slot: SlotWithDoctors) => {
+    if (slot.doctors.length === 1) {
+      // Auto-assign single doctor and skip DOCTOR step
+      setState((s) => ({
+        ...s,
+        step:        STEPS.PATIENT,
+        slotStart:   slot.start,
+        slotDoctors: slot.doctors,
+        doctor:      slot.doctors[0],
+      }))
+    } else {
+      setState((s) => ({
+        ...s,
+        step:        STEPS.DOCTOR,
+        slotStart:   slot.start,
+        slotDoctors: slot.doctors,
+        doctor:      null,
+      }))
+    }
   }, [])
 
   const selectDoctor = useCallback((doctor: DoctorOption) => {
-    setState((s) => ({ ...s, step: STEPS.SLOT, doctor, slotStart: null }))
-  }, [])
-
-  const selectSlot = useCallback((slotStart: string) => {
-    setState((s) => ({ ...s, step: STEPS.PATIENT, slotStart }))
+    setState((s) => ({ ...s, step: STEPS.PATIENT, doctor }))
   }, [])
 
   const goBack = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.max(0, s.step - 1) }))
+    setState((s) => {
+      // If PATIENT was reached by auto-skipping DOCTOR (1 doctor), go back to SLOT
+      if (s.step === STEPS.PATIENT && s.slotDoctors.length <= 1) {
+        return { ...s, step: STEPS.SLOT }
+      }
+      return { ...s, step: Math.max(0, s.step - 1) }
+    })
   }, [])
 
   async function sendOtp(name: string, phone: string) {
@@ -88,14 +112,14 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
     setPatientError(null)
     try {
       const res = await fetch('/api/otp/send', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clinicId:    clinic.id,
-          doctorId:    state.doctor!.id,
-          serviceId:   state.service!.id,
-          startsAt:    state.slotStart!,
-          patientName: name,
+        body:    JSON.stringify({
+          clinicId:     clinic.id,
+          doctorId:     state.doctor!.id,
+          serviceId:    state.service!.id,
+          startsAt:     state.slotStart!,
+          patientName:  name,
           patientPhone: phone,
         }),
       })
@@ -164,11 +188,6 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
     await sendOtp(state.patientName, state.patientPhone)
   }
 
-  // ─── Find doctors for the selected service ────────────────────
-
-  const serviceData = clinic.services.find((s) => s.id === state.service?.id)
-  const doctors     = serviceData?.doctors ?? []
-
   // ─── Render ───────────────────────────────────────────────────
 
   const showProgress = state.step < STEPS.CONFIRMED
@@ -186,23 +205,24 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
           />
         )}
 
-        {state.step === STEPS.DOCTOR && state.service && (
-          <StepDoctor
-            key="doctor"
+        {state.step === STEPS.SLOT && state.service && (
+          <StepSlot
+            key="slot"
             service={state.service}
-            doctors={doctors}
-            onSelect={selectDoctor}
+            timezone={clinic.timezone}
+            onSelect={selectSlot}
             onBack={goBack}
           />
         )}
 
-        {state.step === STEPS.SLOT && state.service && state.doctor && (
-          <StepSlot
-            key="slot"
+        {state.step === STEPS.DOCTOR && state.service && state.slotStart && (
+          <StepDoctor
+            key="doctor"
             service={state.service}
-            doctor={state.doctor}
+            slotStart={state.slotStart}
             timezone={clinic.timezone}
-            onSelect={selectSlot}
+            doctors={state.slotDoctors}
+            onSelect={selectDoctor}
             onBack={goBack}
           />
         )}

@@ -20,8 +20,7 @@ interface Props {
 }
 
 function formatSlotHuman(iso: string, timezone: string) {
-  const d = new Date(iso)
-  return d.toLocaleString('es-MX', {
+  return new Date(iso).toLocaleString('es-ES', {
     timeZone:   timezone,
     weekday:    'long',
     day:        'numeric',
@@ -32,9 +31,11 @@ function formatSlotHuman(iso: string, timezone: string) {
   })
 }
 
-export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, onBack, isLoading, error }: Props) {
+export function StepPatient({
+  service, doctor, timezone, slotStart, onSubmit, onBack, isLoading, error,
+}: Props) {
   const [name,      setName]      = useState('')
-  const [phone,     setPhone]     = useState('+52')
+  const [phone,     setPhone]     = useState('+34')
   const [consented, setConsented] = useState(false)
   const [touched,   setTouched]   = useState({ name: false, phone: false })
 
@@ -68,7 +69,7 @@ export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, on
         </div>
       </div>
 
-      {/* Booking summary card */}
+      {/* Booking summary */}
       <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-1">
         <p className="text-xs text-primary font-semibold uppercase tracking-wide">Resumen de tu cita</p>
         <p className="text-sm font-semibold text-slate-800">{service.name}</p>
@@ -84,7 +85,7 @@ export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, on
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={() => setTouched((p) => ({ ...p, name: true }))}
-            placeholder="Ej. Juan García López"
+            placeholder="Ej. María García López"
             className={cn(touched.name && !nameValid && 'border-destructive focus-visible:ring-destructive')}
           />
           {touched.name && !nameValid && (
@@ -100,28 +101,29 @@ export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, on
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             onBlur={() => setTouched((p) => ({ ...p, phone: true }))}
-            placeholder="+521234567890"
+            placeholder="+34612345678"
             className={cn(
               'font-mono',
               touched.phone && !phoneValid && 'border-destructive focus-visible:ring-destructive'
             )}
           />
           {touched.phone && !phoneValid ? (
-            <p className="text-xs text-destructive">Usa formato internacional, ej. +521234567890.</p>
+            <p className="text-xs text-destructive">Usa formato internacional, ej. +34612345678.</p>
           ) : (
-            <p className="text-xs text-slate-400">Formato internacional con código de país (+52 para México).</p>
+            <p className="text-xs text-slate-400">Formato internacional con prefijo de país (+34 para España).</p>
           )}
         </div>
 
-        {/* GDPR / Data-treatment consent */}
+        {/* RGPD consent — Ley Orgánica 3/2018 (LOPDGDD) + RGPD */}
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
           <p className="text-xs text-slate-500 leading-relaxed">
-            <strong className="text-slate-700">Tratamiento de datos personales.</strong> Los datos que facilitas
-            (nombre y número de teléfono) serán tratados por esta clínica con la única finalidad de gestionar tu
-            cita y enviarte el código de verificación SMS. No se cederán a terceros. Puedes ejercer tus derechos
-            de acceso, rectificación, supresión y portabilidad contactando directamente con la clínica, de
-            conformidad con el <strong>Reglamento General de Protección de Datos (RGPD/GDPR)</strong> y la
-            normativa de protección de datos aplicable.
+            <strong className="text-slate-700">Información básica sobre protección de datos.</strong>{' '}
+            Los datos facilitados (nombre y teléfono) serán tratados por esta clínica con la finalidad
+            exclusiva de gestionar tu cita y enviarte el código de verificación por SMS. No se cederán
+            a terceros. Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición,
+            limitación y portabilidad contactando directamente con la clínica, de conformidad con el{' '}
+            <strong>Reglamento (UE) 2016/679 (RGPD)</strong> y la{' '}
+            <strong>Ley Orgánica 3/2018 (LOPDGDD)</strong>.
           </p>
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
@@ -131,7 +133,8 @@ export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, on
               className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer"
             />
             <span className="text-xs text-slate-700 font-medium">
-              He leído y acepto el tratamiento de mis datos personales para gestionar esta cita. <span className="text-destructive">*</span>
+              He leído y acepto el tratamiento de mis datos personales para la gestión de esta cita.{' '}
+              <span className="text-destructive">*</span>
             </span>
           </label>
         </div>
@@ -151,7 +154,7 @@ export function StepPatient({ service, doctor, timezone, slotStart, onSubmit, on
           {isLoading ? (
             <><Loader2 className="h-4 w-4 animate-spin mr-2" />Enviando SMS…</>
           ) : (
-            'Recibir código SMS'
+            'Recibir código por SMS'
           )}
         </Button>
       </form>
