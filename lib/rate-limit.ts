@@ -12,24 +12,6 @@ function getRedis(): Redis {
   return _redis
 }
 
-// C-01 FIX: 3 OTP send requests per phone number per 10-minute sliding window
-// Prevents SMS flooding and Twilio budget exhaustion
-export const otpSendLimiter = new Ratelimit({
-  redis: getRedis(),
-  limiter: Ratelimit.slidingWindow(3, '10 m'),
-  analytics: true,
-  prefix: '@mbb/otp:send',
-})
-
-// C-01 FIX: 5 verify attempts per appointmentId per 10-minute fixed window
-// On the 6th+ attempt, the route handler cancels the appointment (invalidates OTP)
-export const otpVerifyLimiter = new Ratelimit({
-  redis: getRedis(),
-  limiter: Ratelimit.fixedWindow(5, '10 m'),
-  analytics: true,
-  prefix: '@mbb/otp:verify',
-})
-
 // Anti-spam: max 10 instant bookings per IP per hour
 export const bookingIpLimiter = new Ratelimit({
   redis: getRedis(),

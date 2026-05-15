@@ -1,8 +1,8 @@
 # Medical Booking Boilerplate
 
-White-label patient booking system. OTP-verified appointments, GDPR-compliant, zero race conditions.
+White-label patient booking system. Zero-friction instant booking, GDPR-compliant, race-condition-proof.
 
-**Stack:** Next.js 15 (App Router) · Supabase (PostgreSQL + Auth + RLS) · Twilio SMS · Upstash Redis · shadcn/ui · Vercel
+**Stack:** Next.js 15 (App Router) · Supabase (PostgreSQL + Auth + RLS) · Twilio WhatsApp · Upstash Redis · shadcn/ui · Vercel
 
 ---
 
@@ -111,13 +111,10 @@ cp .env.example .env.local
 | `SUPABASE_PROJECT_ID` | Project ref — only for `npm run db:types` | Local dev |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID | **Server only** |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token | **Server only** |
-| `TWILIO_PHONE_NUMBER` | Twilio sender number (E.164, e.g. `+19789724214`) | **Server only** |
-| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL | **Server only** |
+| `TWILIO_WHATSAPP_FROM` | WhatsApp sender (sandbox: `whatsapp:+14155238886`) | **Server only** |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL — rate limiting (booking + slot lookup) | **Server only** |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis token | **Server only** |
-| `OTP_HASH_PEPPER` | 32-byte random hex — hardens SHA-256 OTP hashes | **Server only** |
 | `NEXT_PUBLIC_APP_URL` | Public base URL (e.g. `https://clinica-a.vercel.app`) | Public |
-
-Generate a pepper: `openssl rand -hex 32`
 
 ### 3 — Apply database schema
 
@@ -169,7 +166,7 @@ npx playwright test
 PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app npx playwright test
 ```
 
-All 9 tests cover: service selection → doctor → slot (2-click: pick + confirm) → GDPR checkbox gate → OTP entry → confirmed screen.
+All 8 tests cover: service selection → doctor (specific or "any specialist") → slot → patient data → confirmed screen.
 
 ---
 
@@ -178,8 +175,8 @@ All 9 tests cover: service selection → doctor → slot (2-click: pick + confir
 | Feature | Implementation |
 |---|---|
 | Double-booking prevention | PostgreSQL `EXCLUDE USING gist` — race-condition proof at DB level |
-| OTP security | SHA-256 + pepper, 5-minute TTL, CSPRNG, cleared after confirmation |
-| Rate limiting | Upstash Redis via `@upstash/ratelimit` on `/api/otp/send` |
+| Rate limiting | Upstash Redis — 2 active limiters: booking (10/h per IP), slot lookup (60/min per IP) |
+| Instant booking | No OTP required — single POST to `book_slot_confirmed` RPC, status always `'confirmed'` |
 | Multi-tenant routing | `clinics.slug` drives `/[clinicSlug]` — no code changes between tenants |
 | Patient privacy | Patients never create accounts; all writes via `SECURITY DEFINER` RPCs |
 | Admin access | Row-Level Security; profiles link users to their clinic |

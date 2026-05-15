@@ -39,7 +39,10 @@ export async function cancelAppointment(id: string) {
     .eq('clinic_id', clinicId)
     .in('status', ['confirmed'])
 
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('[cancelAppointment] DB error:', error)
+    return { error: 'Error al actualizar la cita.' }
+  }
 
   revalidatePath('/admin/appointments')
   return { success: true }

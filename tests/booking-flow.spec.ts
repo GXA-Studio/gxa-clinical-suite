@@ -22,9 +22,10 @@ const FIXTURE_URL = '/test-fixture'
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
-// Slots well in the future so the 15-min grace-period filter never hides them
-const SLOT_A = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-const SLOT_B = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()
+// Same-day slots (1h and 2h from now) — well past 15-min grace filter, and date-matches today
+// so the slot grid shows them when the calendar lands on today's date
+const SLOT_A = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+const SLOT_B = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
 
 /** Two doctors → wizard shows the Doctor-Post step (only when "any specialist" path) */
 const MULTI_DOCTOR_SLOTS = {
@@ -74,14 +75,14 @@ async function setupMocks(page: Page, slots = SINGLE_DOCTOR_SLOTS) {
       body:        JSON.stringify({ activeDow: [] }),
     })
   )
-  // Mode-B slot response (or Mode-A-converted-to-SlotWithDoctors in specific-doctor path)
-  await page.route('**/api/slots**', (route) =>
-    route.fulfill({
-      status:      200,
-      contentType: 'application/json',
-      body:        JSON.stringify(slots),
-    })
-  )
+  // Mode A (doctorId in URL) → { slots: string[] }
+  // Mode B (any specialist)  → { slots: SlotWithDoctors[] }
+  await page.route('**/api/slots**', (route) => {
+    const body = route.request().url().includes('doctorId=')
+      ? JSON.stringify({ slots: [SLOT_A, SLOT_B] })
+      : JSON.stringify(slots)
+    return route.fulfill({ status: 200, contentType: 'application/json', body })
+  })
   // Direct booking (no OTP)
   await page.route('**/api/book', (route) =>
     route.fulfill({

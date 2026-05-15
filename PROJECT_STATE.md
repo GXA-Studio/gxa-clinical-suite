@@ -1,6 +1,6 @@
 # PROJECT STATE — Medical Booking Boilerplate
 > **Single source of truth** for all future sessions.  
-> Last updated: **2026-05-15** — MVP Premium completado. Admin con creación manual activa.
+> Last updated: **2026-05-16** — Sprint de Hardening completado. OTP flow eliminado. Sec + Cruft audit.
 
 ---
 
@@ -12,9 +12,8 @@
 | Base de datos | Supabase (PostgreSQL 15+) | Auth + DB + RLS + SECURITY DEFINER RPCs |
 | Hosting | Vercel | Serverless Edge/Node.js Route Handlers |
 | Mensajería | Twilio WhatsApp Sandbox | `whatsapp:+14155238886` — reemplazar por número aprobado en prod |
-| SMS (legacy) | Twilio SMS | OTP flow clásico — mantenido por compatibilidad |
 | UI | shadcn/ui + Tailwind CSS | framer-motion para animaciones de pasos |
-| Cache / Rate-limit | Upstash Redis | 4 limiters: otp-send, otp-verify, booking-ip, slots-ip |
+| Cache / Rate-limit | Upstash Redis | 2 limiters activos: booking-ip, slots-ip |
 | Validación | Zod | En todos los Route Handlers públicos |
 | Fechas | date-fns-tz | Conversión UTC ↔ timezone local |
 
@@ -39,10 +38,9 @@ Paciente → selecciona servicio / médico / franja horaria / datos personales
 
 **Anti-colisión**: la tabla `appointments` tiene una constraint `EXCLUDE USING gist (doctor_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status <> 'cancelled')`. PostgreSQL rechaza un INSERT con `exclusion_violation (23P01)`, capturado por la RPC como `SLOT_TAKEN (P0001)`.
 
-La RPC libera además slots `pending` con OTP expirado antes del INSERT para evitar bloqueos fantasma.
 
 **Componentes del wizard** (`components/booking/`):  
-`booking-wizard.tsx` → `step-service.tsx` → `step-doctor.tsx` → `step-slot.tsx` → `step-patient.tsx` → `step-confirmed.tsx`
+`booking-wizard.tsx` → `step-service.tsx` → `step-doctor-pre.tsx` → `step-slot.tsx` → `[step-doctor.tsx opcional]` → `step-patient.tsx` → `step-confirmed.tsx`
 
 ---
 
@@ -137,8 +135,6 @@ El staff puede crear citas telefónicamente desde `/admin/appointments` sin que 
 
 | Limiter | Prefijo | Ventana | Límite |
 |---|---|---|---|
-| OTP envío | `@mbb/otp:send` | 10 min sliding | 3 por teléfono |
-| OTP verificación | `@mbb/otp:verify` | 10 min fixed | 5 por appointmentId |
 | Booking por IP | `@mbb/booking:ip` | 1 h sliding | 10 por IP |
 | Slot lookup | `@mbb/slots:ip` | 1 min sliding | 60 por IP |
 
@@ -147,12 +143,11 @@ Todos los limiters fallan abiertos (`fail open`) si Redis no está disponible, p
 ### Validaciones de Seguridad
 
 - **UUID validation**: regex `/^[0-9a-f]{8}-[0-9a-f]{4}…$/i` antes de cualquier query a la BD.
-- **OTP hashing**: HMAC-SHA256 con pepper (`OTP_HASH_PEPPER`) — plaintext nunca persiste.
 - **Phone sanitization**: solo formato E.164 (`/^\+[1-9]\d{7,14}$/`).
 - **Name sanitization**: strip de caracteres de control para prevenir SMS injection.
 - **`server-only`**: importado en todos los módulos de servidor para prevenir fugas al bundle del cliente.
 - **RLS**: Row Level Security activo — admin solo opera sobre su `clinic_id`.
-- **SECURITY DEFINER RPCs**: `book_slot_confirmed`, `confirm_appointment`, `get_available_slots`, `reschedule_appointment` — ejecutan con permisos elevados desde el rol anon.
+- **SECURITY DEFINER RPCs**: `book_slot_confirmed`, `get_available_slots`, `reschedule_appointment` — ejecutan con permisos elevados desde el rol anon.
 
 ### Textos Legales (España — LSSI-CE / RGPD)
 
@@ -210,12 +205,10 @@ SUPABASE_PROJECT_ID=              # Solo para npm run db:types
 # Twilio
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
-TWILIO_PHONE_NUMBER=              # SMS (OTP legacy)
 TWILIO_WHATSAPP_FROM=             # WhatsApp sender (sandbox: whatsapp:+14155238886)
 
 # App
 NEXT_PUBLIC_APP_URL=              # e.g. https://medical-booking-boilerplate.vercel.app
-OTP_HASH_PEPPER=                  # 32-byte hex random — NUNCA cambiar en prod (invalida OTPs)
 INTERNAL_API_SECRET=              # 32-byte hex random
 
 # Redis (Upstash)
@@ -242,10 +235,10 @@ schedules        id, doctor_id, day_of_week(0-6), start_time, end_time, is_activ
 appointments     id, clinic_id, doctor_id, service_id,
                  patient_name, patient_phone,
                  starts_at(UTC), ends_at(UTC),
-                 status(pending|confirmed|cancelled),
+                 status(confirmed|cancelled),
                  cancellation_token(UUID, UNIQUE),
                  reminder_sent(BOOLEAN, DEFAULT false),
-                 otp_code_hash, otp_expires_at, notes
+                 notes
 ```
 
 ### RPCs Activas
@@ -254,8 +247,6 @@ appointments     id, clinic_id, doctor_id, service_id,
 |---|---|---|
 | `get_available_slots(doctor_id, service_id, date)` | `/api/slots` | anon |
 | `get_slots_for_service(service_id, date)` | `/api/slots` (mode B) | anon |
-| `book_slot(clinic_id, doctor_id, service_id, name, phone, starts_at, otp_hash)` | `/api/otp/send` | anon |
-| `confirm_appointment(appointment_id, otp_hash)` | `/api/otp/verify` | anon |
 | `book_slot_confirmed(clinic_id, doctor_id, service_id, name, phone, starts_at)` | `/api/book`, `bookAppointmentManual` | anon |
 | `reschedule_appointment(cancellation_token, new_doctor_id, new_starts_at)` | `rescheduleAppointment` | service role |
 

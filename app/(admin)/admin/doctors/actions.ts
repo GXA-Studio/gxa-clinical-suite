@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { invalidateBookingCache } from '@/lib/cache'
 import { z } from 'zod'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const DoctorSchema = z.object({
   name:      z.string().min(2).max(100).trim(),
   specialty: z.string().max(100).optional().nullable(),
@@ -38,7 +40,10 @@ export async function createDoctor(formData: FormData) {
     .insert({ clinic_id: clinicId, ...parsed.data, email: parsed.data.email || null })
     .select('id')
     .single()
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('[createDoctor] DB error:', error)
+    return { error: 'Error al guardar el médico.' }
+  }
 
   const serviceIds = formData.getAll('service_ids').map(String)
   if (serviceIds.length) {
@@ -53,6 +58,8 @@ export async function createDoctor(formData: FormData) {
 }
 
 export async function updateDoctor(id: string, formData: FormData) {
+  if (!UUID_RE.test(id)) return { error: 'ID no válido.' }
+
   const raw = Object.fromEntries(formData)
   const parsed = DoctorSchema.safeParse(raw)
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors }
@@ -63,7 +70,10 @@ export async function updateDoctor(id: string, formData: FormData) {
   const { error } = await supabase.from('doctors')
     .update({ ...parsed.data, email: parsed.data.email || null })
     .eq('id', id).eq('clinic_id', clinicId)
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('[updateDoctor] DB error:', error)
+    return { error: 'Error al guardar el médico.' }
+  }
 
   await supabase.from('doctor_services').delete().eq('doctor_id', id)
   const serviceIds = formData.getAll('service_ids').map(String)
@@ -79,6 +89,7 @@ export async function updateDoctor(id: string, formData: FormData) {
 }
 
 export async function toggleDoctor(id: string, isActive: boolean) {
+  if (!UUID_RE.test(id)) return
   const supabase = await createClient()
   const { clinicId, clinicSlug } = await getClinicContext(supabase)
   await supabase.from('doctors').update({ is_active: isActive }).eq('id', id).eq('clinic_id', clinicId)

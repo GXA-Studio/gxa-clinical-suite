@@ -21,8 +21,9 @@ const FIXTURE_URL   = '/test-fixture'
 const PATIENT_NAME  = 'Test Playwright Debug'
 const PATIENT_PHONE = '+34674953541'
 
-// A slot far in the future so the 15-min grace-period filter never cuts it
-const FUTURE_SLOT_ISO = '2027-06-15T09:00:00.000Z'
+// Same-day slot (1h from now) — past the 15-min grace filter, date-matches today
+// so the slot grid renders it when the calendar selects today
+const FUTURE_SLOT_ISO = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
 // Fixture IDs that match /test-fixture data exactly
 const FIXTURE_SERVICE_CARDIO = '00000000-0000-0000-0000-000000000011'  // Cardiología (1 doctor → skips doctor step)
@@ -31,27 +32,23 @@ const FIXTURE_DOCTOR_TORRES  = { id: '00000000-0000-0000-0000-000000000022', nam
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 async function mockSlotApis(page: Page) {
-  // All weekdays have availability
+  // All days available — ensures today is selectable regardless of day-of-week
   await page.route('**/api/available-days**', (route: Route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ activeDow: [1, 2, 3, 4, 5] }),
+      body: JSON.stringify({ activeDow: [] }),
     })
   )
 
-  // Return one future slot with the fixture Cardiology doctor
-  await page.route('**/api/slots**', (route: Route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        slots: [
-          { start: FUTURE_SLOT_ISO, doctors: [FIXTURE_DOCTOR_TORRES] },
-        ],
-      }),
-    })
-  )
+  // Mode A (doctorId in URL) → { slots: string[] }
+  // Mode B (any specialist)  → { slots: SlotWithDoctors[] }
+  await page.route('**/api/slots**', (route: Route) => {
+    const body = route.request().url().includes('doctorId=')
+      ? JSON.stringify({ slots: [FUTURE_SLOT_ISO] })
+      : JSON.stringify({ slots: [{ start: FUTURE_SLOT_ISO, doctors: [FIXTURE_DOCTOR_TORRES] }] })
+    return route.fulfill({ status: 200, contentType: 'application/json', body })
+  })
 }
 
 async function mockBookApi(page: Page, capturedPayloads: unknown[]) {
@@ -76,8 +73,10 @@ async function mockBookApi(page: Page, capturedPayloads: unknown[]) {
 
 async function selectService(page: Page) {
   await expect(page.getByText('¿Qué servicio necesitas?')).toBeVisible()
-  // Cardiología has only 1 doctor → wizard skips StepDoctor entirely
   await page.getByText('Cardiología').click()
+  // DOCTOR_PRE step always shown — pick the specific doctor
+  await expect(page.getByText('Elige profesional')).toBeVisible({ timeout: 5_000 })
+  await page.getByText('Dr. Miguel Torres').click()
   await expect(page.getByText('Elige fecha y hora')).toBeVisible()
 }
 

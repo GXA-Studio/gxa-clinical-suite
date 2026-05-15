@@ -3,6 +3,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const ScheduleSchema = z.object({
   doctor_id:   z.string().uuid(),
   day_of_week: z.coerce.number().int().min(0).max(6),
@@ -40,7 +42,8 @@ export async function createSchedule(formData: FormData) {
 
   if (error) {
     if (error.message.includes('schedule_overlap')) return { error: 'El bloque se solapa con un turno existente.' }
-    return { error: error.message }
+    console.error('[createSchedule] DB error:', error)
+    return { error: 'Error al guardar el horario.' }
   }
 
   revalidatePath('/admin/schedules')
@@ -48,25 +51,17 @@ export async function createSchedule(formData: FormData) {
 }
 
 export async function deleteSchedule(id: string) {
+  if (!UUID_RE.test(id)) return
   const supabase = await createClient()
-  const clinicId = await getClinicId(supabase)
+  await getClinicId(supabase) // auth check — RLS enforces clinic ownership
 
-  // RLS + join to verify ownership
-  const { error } = await supabase
-    .from('schedules')
-    .delete()
-    .eq('id', id)
-    .eq('doctors.clinic_id', clinicId)  // enforced via RLS policy on schedules
-
-  // Fallback: just attempt delete — RLS will block unauthorized access
-  if (error) {
-    await supabase.from('schedules').delete().eq('id', id)
-  }
+  await supabase.from('schedules').delete().eq('id', id)
 
   revalidatePath('/admin/schedules')
 }
 
 export async function toggleSchedule(id: string, isActive: boolean) {
+  if (!UUID_RE.test(id)) return
   const supabase = await createClient()
   await getClinicId(supabase) // auth check
   await supabase.from('schedules').update({ is_active: isActive }).eq('id', id)
