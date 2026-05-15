@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { validateRequest } from 'twilio'
 import twilio from 'twilio'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getBaseUrl } from '@/lib/utils'
 
 const CANCEL_KEYWORDS  = ['cancelar', 'anular', 'baja', 'cancel']
 const PRIVACY_KEYWORDS = ['rgpd', 'privacidad', 'datos', 'info', 'legal', 'informacion']
@@ -62,11 +63,7 @@ export async function POST(req: NextRequest) {
 
   const twiml = new twilio.twiml.MessagingResponse()
 
-  const appBaseUrl =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
-    (process.env.VERCEL_URL                    ? `https://${process.env.VERCEL_URL}`                    : '') ||
-    'http://localhost:3000'
+  const appBaseUrl = getBaseUrl()
 
   const hasCancel  = CANCEL_KEYWORDS.some((kw) => bodyText.includes(kw))
   const hasPrivacy = PRIVACY_KEYWORDS.some((kw) => bodyText.includes(kw))

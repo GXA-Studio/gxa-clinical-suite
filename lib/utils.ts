@@ -58,6 +58,32 @@ export function sanitizeName(name: string): string {
   return name.replace(/[\r\n\t\x00-\x1F\x7F]/g, ' ').trim()
 }
 
+// ---------- Base URL (server-side) ----------
+
+// Single source of truth for the public app URL.
+// Priority: NEXT_PUBLIC_APP_URL → VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL → localhost.
+// VERCEL_* vars arrive WITHOUT a protocol prefix — we always prepend "https://".
+// A log line is emitted on every call so Vercel Function Logs show exactly which source won.
+export function getBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    const url = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
+    console.log('[getBaseUrl] source=NEXT_PUBLIC_APP_URL →', url)
+    return url
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    const url = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    console.log('[getBaseUrl] source=VERCEL_PROJECT_PRODUCTION_URL →', url)
+    return url
+  }
+  if (process.env.VERCEL_URL) {
+    const url = `https://${process.env.VERCEL_URL}`
+    console.log('[getBaseUrl] source=VERCEL_URL →', url)
+    return url
+  }
+  console.warn('[getBaseUrl] source=localhost fallback — set NEXT_PUBLIC_APP_URL in Vercel Dashboard')
+  return 'http://localhost:3000'
+}
+
 // ---------- Misc ----------
 
 export function slugify(text: string): string {

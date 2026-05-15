@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendWhatsAppConfirmation } from '@/lib/twilio/client'
-import { isValidE164, sanitizeName } from '@/lib/utils'
+import { isValidE164, sanitizeName, getBaseUrl } from '@/lib/utils'
 import { bookingIpLimiter } from '@/lib/rate-limit'
 
 const BookSchema = z.object({
@@ -109,12 +109,9 @@ export async function POST(req: NextRequest) {
     .eq('id', doctorId)
     .single()
 
-  // Priority: explicit env var → Vercel production domain → Vercel deployment URL → localhost fallback
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
-    (process.env.VERCEL_URL                    ? `https://${process.env.VERCEL_URL}`                    : '') ||
-    'http://localhost:3000'
+  const baseUrl = getBaseUrl()
+
+  console.log('[POST /api/book] Twilio payload → to: whatsapp:' + patientPhone + ' | baseUrl:', baseUrl)
 
   sendWhatsAppConfirmation({
     to:                patientPhone,
@@ -125,7 +122,10 @@ export async function POST(req: NextRequest) {
     timezone:          (clinic as { timezone: string }).timezone,
     cancellationToken: appt.cancellation_token,
     baseUrl,
-  }).catch((err) => console.error('[POST /api/book] WhatsApp confirmation error:', err))
+  }).catch((err: unknown) => {
+    const e = err as { status?: number; code?: number; message?: string; moreInfo?: string }
+    console.error('[TWILIO FATAL ERROR]:', e.message, '| code:', e.code, '| moreInfo:', e.moreInfo, '| to: whatsapp:' + patientPhone)
+  })
 
   return NextResponse.json({ appointmentId: appt.id }, { status: 201 })
 }
