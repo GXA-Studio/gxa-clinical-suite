@@ -1,10 +1,8 @@
 'use client'
 import { useState } from 'react'
-import { AnimatePresence } from 'framer-motion'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { StepPatient }   from './step-patient'
-import { StepConfirmed } from './step-confirmed'
-import type { ServiceOption, DoctorOption, ModalPhase } from './types'
+import { StepPatient } from './step-patient'
+import type { ServiceOption, DoctorOption } from './types'
 
 interface Props {
   open:         boolean
@@ -14,25 +12,20 @@ interface Props {
   service:      ServiceOption
   doctor:       DoctorOption
   slotStart:    string
+  onConfirmed:  (patientName: string) => void
 }
 
 export function BookingModal({
-  open, onOpenChange, clinicId, timezone, service, doctor, slotStart,
+  open, onOpenChange, clinicId, timezone, service, doctor, slotStart, onConfirmed,
 }: Props) {
-  const [phase,        setPhase]        = useState<ModalPhase>('patient')
-  const [patientName,  setPatientName]  = useState('')
   const [isLoading,    setIsLoading]    = useState(false)
   const [patientError, setPatientError] = useState<string | null>(null)
 
-  function resetState() {
-    setPhase('patient')
-    setPatientName('')
-    setIsLoading(false)
-    setPatientError(null)
-  }
-
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) resetState()
+    if (!nextOpen) {
+      setIsLoading(false)
+      setPatientError(null)
+    }
     onOpenChange(nextOpen)
   }
 
@@ -66,8 +59,9 @@ export function BookingModal({
         setPatientError(body.error ?? 'No se pudo confirmar la cita. Inténtalo de nuevo.')
         return
       }
-      setPatientName(name)
-      setPhase('confirmed')
+      // Close modal first, then notify parent — parent handles the success screen
+      handleOpenChange(false)
+      onConfirmed(name)
     } catch {
       setPatientError('Error de red. Revisa tu conexión.')
     } finally {
@@ -78,31 +72,16 @@ export function BookingModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
-        <AnimatePresence mode="wait">
-          {phase === 'patient' && (
-            <StepPatient
-              key="patient"
-              service={service}
-              doctor={doctor}
-              timezone={timezone}
-              slotStart={slotStart}
-              onSubmit={bookInstant}
-              onBack={() => handleOpenChange(false)}
-              isLoading={isLoading}
-              error={patientError}
-            />
-          )}
-          {phase === 'confirmed' && (
-            <StepConfirmed
-              key="confirmed"
-              service={service}
-              doctor={doctor}
-              slotStart={slotStart}
-              timezone={timezone}
-              patientName={patientName}
-            />
-          )}
-        </AnimatePresence>
+        <StepPatient
+          service={service}
+          doctor={doctor}
+          timezone={timezone}
+          slotStart={slotStart}
+          onSubmit={bookInstant}
+          onBack={() => handleOpenChange(false)}
+          isLoading={isLoading}
+          error={patientError}
+        />
       </DialogContent>
     </Dialog>
   )

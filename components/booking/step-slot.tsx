@@ -9,7 +9,6 @@ import { cn }       from '@/lib/utils'
 import type { ServiceOption, SlotWithDoctors } from './types'
 
 function toDateParam(d: Date) {
-  // Local YYYY-MM-DD — consistent with how schedules store local time
   return [
     d.getFullYear(),
     String(d.getMonth() + 1).padStart(2, '0'),
@@ -50,7 +49,6 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
 
-  // Fetch active days-of-week for this service once on mount
   useEffect(() => {
     setDowLoading(true)
     fetch(`/api/available-days?serviceId=${service.id}`)
@@ -60,7 +58,6 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
       .finally(() => setDowLoading(false))
   }, [service.id])
 
-  // Fetch slots when selected date changes
   useEffect(() => {
     if (!selectedDate) return
     let cancelled = false
@@ -77,7 +74,19 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
     return () => { cancelled = true }
   }, [selectedDate, service.id])
 
-  // Calendar disabled matcher: past days + days with no schedules for this service
+  // 15-min grace: recompute every time slots arrive so the cutoff is always fresh
+  const cutoff = useMemo(
+    () => new Date(Date.now() + 15 * 60 * 1000),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slots]
+  )
+
+  // Filter out slots in the past (+ grace period) — only relevant for today
+  const visibleSlots = useMemo(
+    () => slots.filter((s) => new Date(s.start) > cutoff),
+    [slots, cutoff]
+  )
+
   const disabledMatcher = useMemo(
     () => (date: Date) => {
       if (date < today) return true
@@ -87,7 +96,6 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
     [activeDow, today]
   )
 
-  // Limit navigation to 3 months ahead
   const maxDate = useMemo(() => {
     const d = new Date()
     d.setMonth(d.getMonth() + 3)
@@ -96,7 +104,7 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
 
   function handleConfirm() {
     if (!selectedSlot) return
-    const slot = slots.find((s) => s.start === selectedSlot)
+    const slot = visibleSlots.find((s) => s.start === selectedSlot)
     if (slot) onSelect(slot)
   }
 
@@ -119,7 +127,6 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
         </div>
       </div>
 
-      {/* Monthly calendar */}
       <div className="flex justify-center">
         {dowLoading ? (
           <div className="flex items-center justify-center h-[280px] w-full text-slate-400">
@@ -140,7 +147,6 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
         )}
       </div>
 
-      {/* Time-slot grid — shown after a date is picked */}
       {selectedDate && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -164,14 +170,14 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
               <div className="flex justify-center items-center h-24 text-slate-400">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
-            ) : slots.length === 0 ? (
+            ) : visibleSlots.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-24 text-slate-400 gap-2">
                 <CalendarX className="h-5 w-5 opacity-50" />
                 <p className="text-sm">Sin huecos disponibles este día</p>
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {slots.map((slot) => (
+                {visibleSlots.map((slot) => (
                   <button
                     key={slot.start}
                     onClick={() => setSelectedSlot(selectedSlot === slot.start ? null : slot.start)}

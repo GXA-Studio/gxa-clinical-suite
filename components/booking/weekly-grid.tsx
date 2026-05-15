@@ -40,16 +40,25 @@ function formatDateHeader(dateStr: string): { weekday: string; day: string } {
 export function WeeklyGrid({ slots, dates, timezone, timeOfDay, onSlotClick }: Props) {
   const [expandedCols, setExpandedCols] = useState<Set<number>>(new Set())
 
+  // Recomputed every time slots/dates change so the cutoff reflects the current moment
+  const cutoff = useMemo(
+    () => new Date(Date.now() + 15 * 60 * 1000),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slots, dates]
+  )
+
   const filteredSlots = useMemo(() => {
     return dates.map((date) => {
       const daySlots = slots[date] ?? []
-      if (timeOfDay === 'all') return daySlots
-      return daySlots.filter((iso) => {
+      // Strip slots within the 15-min grace window
+      const futureSlots = daySlots.filter((iso) => new Date(iso) > cutoff)
+      if (timeOfDay === 'all') return futureSlots
+      return futureSlots.filter((iso) => {
         const hour = localHour(iso, timezone)
         return timeOfDay === 'morning' ? hour < 14 : hour >= 14
       })
     })
-  }, [slots, dates, timezone, timeOfDay])
+  }, [slots, dates, timezone, timeOfDay, cutoff])
 
   const hasAnySlot = filteredSlots.some((s) => s.length > 0)
 
@@ -76,7 +85,6 @@ export function WeeklyGrid({ slots, dates, timezone, timeOfDay, onSlotClick }: P
 
           return (
             <div key={date} className="flex flex-col items-center gap-1.5 w-[72px] shrink-0">
-              {/* Cabecera del día */}
               <div className="text-center mb-0.5">
                 <p className="text-[10px] font-medium text-slate-400 capitalize">{weekday}</p>
                 <p className="text-sm font-bold text-slate-700">{day}</p>
