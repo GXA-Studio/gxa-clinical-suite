@@ -43,7 +43,8 @@ function formatTimeLabel(isoUtc: string, timezone: string) {
 }
 
 function todayLocalDate() {
-  return new Date().toISOString().slice(0, 10)
+  // en-CA locale formats as YYYY-MM-DD using the browser's local timezone
+  return new Intl.DateTimeFormat('en-CA').format(new Date())
 }
 
 export function NewAppointmentDialog({ doctors, services }: Props) {

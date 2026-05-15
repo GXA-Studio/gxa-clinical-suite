@@ -1,17 +1,15 @@
 import { createClient }   from '@/lib/supabase/server'
 import { ServicesClient }  from '@/components/admin/services-client'
+import { getAdminProfile } from '@/lib/admin/profile'
 
 export default async function ServicesPage() {
+  const { clinicId } = await getAdminProfile()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { data: profile } = await supabase
-    .from('profiles').select('clinic_id').eq('id', user!.id).single()
 
   const { data: services } = await supabase
     .from('services')
     .select('*')
-    .eq('clinic_id', profile?.clinic_id ?? '')
+    .eq('clinic_id', clinicId)
     .order('created_at', { ascending: false })
 
   return (

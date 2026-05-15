@@ -1,4 +1,5 @@
 'use server'
+import { after } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { sendWhatsAppConfirmation } from '@/lib/twilio/client'
@@ -93,8 +94,10 @@ export async function bookAppointmentManual(data: BookManualFormData) {
 
   const baseUrl = getBaseUrl()
 
-  try {
-    await sendWhatsAppConfirmation({
+  // Defer Twilio after the response is returned — avoids blocking the UI on external latency.
+  // The booking is already committed to the DB at this point, so the notification is safe to run async.
+  after(() => {
+    void sendWhatsAppConfirmation({
       to:                patientPhone,
       patientName:       name,
       clinicName:        (clinic as { name: string }).name,
@@ -103,10 +106,10 @@ export async function bookAppointmentManual(data: BookManualFormData) {
       timezone:          (clinic as { timezone: string }).timezone,
       cancellationToken: appt.cancellation_token,
       baseUrl,
+    }).catch((err) => {
+      console.error('[bookAppointmentManual] WhatsApp confirmation failed (booking still saved):', err)
     })
-  } catch (err) {
-    console.error('[bookAppointmentManual] WhatsApp confirmation failed (booking still saved):', err)
-  }
+  })
 
   revalidatePath('/admin/appointments')
   return { success: true, appointmentId: appt.id }

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { AppointmentsTable } from '@/components/admin/appointments-table'
 import { NewAppointmentDialog } from '@/components/admin/new-appointment-dialog'
+import { getAdminProfile } from '@/lib/admin/profile'
 
 export default async function AppointmentsPage({
   searchParams,
@@ -8,15 +9,9 @@ export default async function AppointmentsPage({
   searchParams: Promise<{ status?: string; date?: string }>
 }) {
   const { status, date } = await searchParams
+  // getAdminProfile() is React.cache()-memoized — re-uses the result from layout with zero extra roundtrip
+  const { clinicId, timezone } = await getAdminProfile()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles').select('clinic_id, clinics(timezone)').eq('id', user!.id).single()
-
-  const clinicId = profile?.clinic_id ?? ''
-  const timezone = (profile?.clinics as { timezone: string } | null)?.timezone
-    ?? process.env.NEXT_PUBLIC_DEFAULT_TIMEZONE
-    ?? 'UTC'
 
   let query = supabase
     .from('appointments')

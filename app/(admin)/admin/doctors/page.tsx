@@ -1,13 +1,10 @@
 import { createClient }  from '@/lib/supabase/server'
 import { DoctorsClient } from '@/components/admin/doctors-client'
+import { getAdminProfile } from '@/lib/admin/profile'
 
 export default async function DoctorsPage() {
+  const { clinicId } = await getAdminProfile()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles').select('clinic_id').eq('id', user!.id).single()
-
-  const clinicId = profile?.clinic_id ?? ''
 
   const [{ data: doctors }, { data: services }] = await Promise.all([
     supabase.from('doctors')

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ScheduleEditor } from '@/components/admin/schedule-editor'
+import { getAdminProfile } from '@/lib/admin/profile'
 
 interface ScheduleRow {
   id: string
@@ -19,12 +20,8 @@ interface DoctorWithSchedules {
 }
 
 export default async function SchedulesPage() {
+  const { clinicId } = await getAdminProfile()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles').select('clinic_id').eq('id', user!.id).single()
-
-  const clinicId = profile?.clinic_id ?? ''
 
   const { data: doctors } = await supabase
     .from('doctors')
