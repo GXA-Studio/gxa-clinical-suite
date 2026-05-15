@@ -19,7 +19,7 @@ function tryGetRedis(): Redis | null {
   }
 }
 
-const BOOKING_KEY = (slug: string) => `mbb:booking:${slug}`
+const BOOKING_KEY = (slug: string) => `mbb:booking:v2:${slug}`
 
 export async function getBookingData(
   clinicSlug: string,

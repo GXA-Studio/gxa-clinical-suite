@@ -126,6 +126,36 @@ export type Database = {
         }
         Relationships: []
       }
+      doctor_insurances: {
+        Row: {
+          doctor_id: string
+          insurance_id: string
+        }
+        Insert: {
+          doctor_id: string
+          insurance_id: string
+        }
+        Update: {
+          doctor_id?: string
+          insurance_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doctor_insurances_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "doctor_insurances_insurance_id_fkey"
+            columns: ["insurance_id"]
+            isOneToOne: false
+            referencedRelation: "insurances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       doctor_services: {
         Row: {
           doctor_id: string
@@ -196,6 +226,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      insurances: {
+        Row: {
+          created_at: string
+          id: string
+          logo_url: string | null
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          name?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
