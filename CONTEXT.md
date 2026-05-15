@@ -168,7 +168,18 @@ INTERNAL_API_SECRET=         # 32-byte random hex, used to validate internal cal
 
 ## ✅ ESTADO FINAL — PRODUCTION READY
 
-**Auditoría de calidad completada. Codebase listo para producción.**
+**Codebase listo para producción. Base de datos con esquema consolidado y admin vinculado.**
+
+### Base de Datos
+
+| Aspecto | Estado |
+|---|---|
+| Esquema (tablas, índices, RLS, RPCs) | ✅ Consolidado en `20260515000000_initial_schema.sql` |
+| Clínica de pruebas | ✅ Seed incluido — slug: `clinica-prueba` |
+| Identidad administrativa | ✅ `studiogxa@gmail.com` — vincular vía `UPDATE profiles` tras sign-up |
+| Modelo de despliegue | Single-Tenant (un proyecto Supabase por clínica) |
+
+**Auditoría de calidad completada.**
 
 ### Paso A — TypeScript ✅ RESUELTO
 
@@ -216,8 +227,16 @@ PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app npx playwrigh
 | 7 | `faa19d2` | fix(types): upgrade @supabase/ssr 0.5.2→0.10.3 (52 errors → 0) |
 | 8 | `8ccd130` | test(e2e): add Playwright booking funnel + Vercel deployment config |
 | 9 | `a6abe29` | test(e2e): fix fixture page guard, slot two-click flow, production playwright config |
-| 10 | `(final)` | chore: final quality audit and typescript fixes |
+| 10 | `33aecb9` | chore: final quality audit and typescript fixes |
+| 11 | `(pending)` | feat(db): add initial migration and update setup documentation |
 
 **Remote**: `https://github.com/GXA-Studio/medical-booking-boilerplate.git`  
-**Vercel**: `https://medical-booking-boilerplate.vercel.app`  
-**Deploy ID**: `dpl_9gUBa8iPgLwTm7MN6feVJewrrbsU`
+**Vercel**: `https://medical-booking-boilerplate.vercel.app`
+
+### Archivos SQL de Migración
+
+| Archivo | Propósito |
+|---|---|
+| `supabase/migrations/001_initial.sql` | Schema original (tablas, triggers, RPCs, RLS, grants) |
+| `supabase/migrations/002_add_phone_constraint.sql` | Constraint E.164 en `appointments.patient_phone` |
+| `supabase/migrations/20260515000000_initial_schema.sql` | **Consolidado** — schema completo + seed `clinica-prueba` + vinculación admin |
