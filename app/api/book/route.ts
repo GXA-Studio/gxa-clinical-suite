@@ -52,12 +52,17 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = getClientIp(req)
-  const { success: ratePassed } = await bookingIpLimiter.limit(ip)
-  if (!ratePassed) {
-    return NextResponse.json(
-      { error: 'RATE_LIMITED', message: 'Too many booking requests from this IP. Try again later.' },
-      { status: 429 }
-    )
+  try {
+    const { success: ratePassed } = await bookingIpLimiter.limit(ip)
+    if (!ratePassed) {
+      return NextResponse.json(
+        { error: 'RATE_LIMITED', message: 'Too many booking requests from this IP. Try again later.' },
+        { status: 429 }
+      )
+    }
+  } catch (err) {
+    // Fail open: if Redis is unavailable, let the booking proceed rather than block users
+    console.warn('[POST /api/book] Rate limiter unavailable, proceeding without limit check:', err)
   }
 
   const supabase = createServiceClient()
