@@ -34,42 +34,41 @@ npx supabase link --project-ref <your-project-ref>
 npx supabase db push
 ```
 
-**Option B — Single consolidated file (simplest for new projects)**
+**Option B — Single idempotent file (recommended for new projects)**
 
 Open Supabase Dashboard → SQL Editor → paste and run:
 
 ```
-supabase/migrations/20260515000000_initial_schema.sql
+supabase/migrations/20260515_final_schema.sql
 ```
 
-This consolidated file contains the full schema (tables, indexes, triggers, RPCs, RLS, grants) plus sample seed data for a `clinica-prueba` clinic.
+This is the **certified, idempotent** file — tables, triggers (auto-profile on sign-up), RPCs, RLS, grants, profile backfill, and admin linkage. Safe to re-run on existing projects.
 
-> **Do not run the consolidated file if migrations 001 + 002 are already applied** — you will get duplicate object errors.
+> For projects that already have 001 + 002 applied, run only Parts 10–11 of `20260515_final_schema.sql` (missing trigger fix + admin linkage).
 
 ### Step 3 — Create the first admin user
 
 1. Go to Supabase Dashboard → **Authentication** → **Add user**
 2. Enter the admin email (e.g. `studiogxa@gmail.com`) and a temporary password
-3. The database trigger `fn_handle_new_user` automatically creates a `profiles` row for the new user
 
-> Alternatively, the admin can self-register via the app at `/auth/login`.
+The trigger `trg_on_auth_user_created` (installed in the schema) automatically creates a `profiles` row when the user signs up. If you applied `20260515_final_schema.sql`, this trigger is already in place.
+
+> **If the admin gets "Esta cuenta no tiene una clínica asociada"** after login, it means their profile row exists but `clinic_id` is NULL. Run Step 4.
 
 ### Step 4 — Link the admin to the clinic
 
-The admin–clinic relationship is stored in `profiles.clinic_id` (not as an `admin_id` column in `clinics` — this design allows multiple admins/staff per clinic).
-
-**Option A — SQL (after user exists in auth.users)**
+The admin–clinic relationship is in **`profiles.clinic_id`**, not in a `clinics.admin_id` column. This design allows multiple admins and staff per clinic.
 
 ```sql
+-- Run in Supabase SQL Editor after the user has signed up
 UPDATE public.profiles
-SET    clinic_id = (SELECT id FROM public.clinics WHERE slug = 'clinica-prueba'),
+SET    clinic_id = (SELECT id FROM public.clinics WHERE slug = 'clinica-prueba' LIMIT 1),
        role      = 'admin'
-WHERE  id = (SELECT id FROM auth.users WHERE email = 'studiogxa@gmail.com');
+WHERE  id = (SELECT id FROM auth.users WHERE email = 'YOUR_ADMIN_EMAIL@example.com' LIMIT 1)
+  AND  clinic_id IS NULL;
 ```
 
-**Option B — Admin Dashboard**
-
-The admin panel at `/admin` provides a UI to assign themselves to a clinic after first login.
+> **Root cause note**: If a user signed up BEFORE the trigger was installed (early deployments), their `profiles` row was never created. Fix by running Part 10 of `20260515_final_schema.sql`, which backfills all missing profile rows.
 
 ### Step 5 — Verify
 

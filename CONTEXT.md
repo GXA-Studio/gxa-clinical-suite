@@ -170,14 +170,18 @@ INTERNAL_API_SECRET=         # 32-byte random hex, used to validate internal cal
 
 **Codebase listo para producción. Base de datos con esquema consolidado y admin vinculado.**
 
-### Base de Datos
+### Base de Datos — Certificada y Operativa
 
 | Aspecto | Estado |
 |---|---|
-| Esquema (tablas, índices, RLS, RPCs) | ✅ Consolidado en `20260515000000_initial_schema.sql` |
-| Clínica de pruebas | ✅ Seed incluido — slug: `clinica-prueba` |
-| Identidad administrativa | ✅ `studiogxa@gmail.com` — vincular vía `UPDATE profiles` tras sign-up |
+| Esquema (tablas, índices, RLS, RPCs) | ✅ Aplicado en producción |
+| Trigger auto-perfil (`trg_on_auth_user_created`) | ✅ Instalado — crea `profiles` al registrar usuario |
+| Clínica activa | ✅ `clinica-prueba` — `id: 6f9053f7-256c-4966-8a81-1b450dcca7d1` |
+| Identidad administrativa | ✅ `studiogxa@gmail.com` → `profiles.clinic_id` vinculado |
+| Panel de Admin | ✅ **Acceso certificado y operativo** |
 | Modelo de despliegue | Single-Tenant (un proyecto Supabase por clínica) |
+
+**Bug resuelto**: El trigger `fn_handle_new_user` no existía en el despliegue inicial. Los usuarios que se registraban obtenían una fila en `auth.users` pero NO en `profiles` → `profile?.clinic_id = null` → mensaje "Esta cuenta no tiene una clínica asociada". Solución en `20260515_final_schema.sql` Parts 5, 6 y 10.
 
 **Auditoría de calidad completada.**
 
@@ -237,6 +241,7 @@ PLAYWRIGHT_BASE_URL=https://medical-booking-boilerplate.vercel.app npx playwrigh
 
 | Archivo | Propósito |
 |---|---|
-| `supabase/migrations/001_initial.sql` | Schema original (tablas, triggers, RPCs, RLS, grants) |
-| `supabase/migrations/002_add_phone_constraint.sql` | Constraint E.164 en `appointments.patient_phone` |
-| `supabase/migrations/20260515000000_initial_schema.sql` | **Consolidado** — schema completo + seed `clinica-prueba` + vinculación admin |
+| `001_initial.sql` | Schema incremental original (tablas, triggers, RPCs, RLS, grants) |
+| `002_add_phone_constraint.sql` | Constraint E.164 en `appointments.patient_phone` |
+| `20260515000000_initial_schema.sql` | Consolidado v1 — schema completo + seed |
+| `20260515_final_schema.sql` | **✅ CERTIFICADO** — idempotente, trigger auto-perfil incluido, backfill, vinculación admin |
