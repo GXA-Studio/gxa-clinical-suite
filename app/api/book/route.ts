@@ -113,19 +113,28 @@ export async function POST(req: NextRequest) {
 
   console.log('[POST /api/book] Twilio payload → to: whatsapp:' + patientPhone + ' | baseUrl:', baseUrl)
 
-  sendWhatsAppConfirmation({
-    to:                patientPhone,
-    patientName,
-    clinicName:        (clinic as { name: string }).name,
-    doctorName:        doctor?.name ?? 'tu médico',
-    startsAt:          appt.starts_at,
-    timezone:          (clinic as { timezone: string }).timezone,
-    cancellationToken: appt.cancellation_token,
-    baseUrl,
-  }).catch((err: unknown) => {
+  try {
+    await sendWhatsAppConfirmation({
+      to:                patientPhone,
+      patientName,
+      clinicName:        (clinic as { name: string }).name,
+      doctorName:        doctor?.name ?? 'tu médico',
+      startsAt:          appt.starts_at,
+      timezone:          (clinic as { timezone: string }).timezone,
+      cancellationToken: appt.cancellation_token,
+      baseUrl,
+    })
+  } catch (err: unknown) {
     const e = err as { status?: number; code?: number; message?: string; moreInfo?: string }
-    console.error('[TWILIO FATAL ERROR]:', e.message, '| code:', e.code, '| moreInfo:', e.moreInfo, '| to: whatsapp:' + patientPhone)
-  })
+    console.error(
+      '\n\n🚨🚨🚨 [TWILIO WHATSAPP SEND FAILED] 🚨🚨🚨',
+      '\n  to:      whatsapp:' + patientPhone,
+      '\n  message:', e.message,
+      '\n  code:   ', e.code,
+      '\n  moreInfo:', e.moreInfo,
+      '\n🚨🚨🚨 [END TWILIO ERROR] 🚨🚨🚨\n\n'
+    )
+  }
 
   return NextResponse.json({ appointmentId: appt.id }, { status: 201 })
 }

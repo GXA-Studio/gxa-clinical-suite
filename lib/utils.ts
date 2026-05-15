@@ -63,22 +63,44 @@ export function sanitizeName(name: string): string {
 // Single source of truth for the public app URL.
 // Priority: NEXT_PUBLIC_APP_URL → VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL → localhost.
 // VERCEL_* vars arrive WITHOUT a protocol prefix — we always prepend "https://".
-// A log line is emitted on every call so Vercel Function Logs show exactly which source won.
+// Anti-Localhost guard: if running on Vercel (VERCEL=1) and the resolved URL still contains
+// "localhost", we override with the hardcoded prod domain. This prevents broken cancel links
+// caused by NEXT_PUBLIC_APP_URL being accidentally set to localhost in the dashboard.
+const PROD_FALLBACK = 'https://medical-booking-boilerplate.vercel.app'
+
 export function getBaseUrl(): string {
+  const onVercel = process.env.VERCEL === '1'
+
   if (process.env.NEXT_PUBLIC_APP_URL) {
     const url = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
+    if (onVercel && url.includes('localhost')) {
+      console.warn('[getBaseUrl] NEXT_PUBLIC_APP_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
+      return PROD_FALLBACK
+    }
     console.log('[getBaseUrl] source=NEXT_PUBLIC_APP_URL →', url)
     return url
   }
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
     const url = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    if (onVercel && url.includes('localhost')) {
+      console.warn('[getBaseUrl] VERCEL_PROJECT_PRODUCTION_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
+      return PROD_FALLBACK
+    }
     console.log('[getBaseUrl] source=VERCEL_PROJECT_PRODUCTION_URL →', url)
     return url
   }
   if (process.env.VERCEL_URL) {
     const url = `https://${process.env.VERCEL_URL}`
+    if (onVercel && url.includes('localhost')) {
+      console.warn('[getBaseUrl] VERCEL_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
+      return PROD_FALLBACK
+    }
     console.log('[getBaseUrl] source=VERCEL_URL →', url)
     return url
+  }
+  if (onVercel) {
+    console.warn('[getBaseUrl] Running on Vercel but no URL env var resolved — forcing prod fallback:', PROD_FALLBACK)
+    return PROD_FALLBACK
   }
   console.warn('[getBaseUrl] source=localhost fallback — set NEXT_PUBLIC_APP_URL in Vercel Dashboard')
   return 'http://localhost:3000'

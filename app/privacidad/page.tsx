@@ -7,9 +7,8 @@ export const metadata: Metadata = {
 }
 
 const CONTACT_EMAIL = 'studiogxa@gmail.com'
-const CLINIC_NAME   = '[NOMBRE DE LA CLÍNICA]'
-const CLINIC_NIF    = '[NIF/CIF DEL RESPONSABLE]'
-const CLINIC_ADDR   = '[DIRECCIÓN COMPLETA DE LA CLÍNICA]'
+const CLINIC_NAME   = 'La Clínica contratante del servicio'
+const GXA_ROLE      = 'GXA Studio (Encargado del Tratamiento · Proveedor SaaS)'
 const DPO_EMAIL     = CONTACT_EMAIL
 
 export default function PrivacidadPage() {
@@ -40,13 +39,30 @@ export default function PrivacidadPage() {
 
           {/* 1. Responsable */}
           <Section number="1" title="Responsable del Tratamiento">
-            <Table rows={[
-              ['Denominación social', CLINIC_NAME],
-              ['NIF / CIF',          CLINIC_NIF],
-              ['Domicilio social',    CLINIC_ADDR],
-              ['Correo de contacto',  CONTACT_EMAIL],
-              ['Delegado de Protección de Datos (DPD)', DPO_EMAIL],
-            ]} />
+            <P>
+              En el marco del presente servicio existen dos figuras diferenciadas conforme al
+              art. 4 del RGPD:
+            </P>
+            <div className="mt-4 space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">Responsable del tratamiento (la clínica)</p>
+                <Table rows={[
+                  ['Denominación',       CLINIC_NAME],
+                  ['NIF / CIF',          'Facilitado en el contrato de prestación de servicios'],
+                  ['Domicilio social',   'Indicado en el contrato de prestación de servicios'],
+                  ['Correo de contacto', CONTACT_EMAIL],
+                  ['DPD / Contacto RGPD', DPO_EMAIL],
+                ]} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">Encargado del tratamiento (proveedor tecnológico)</p>
+                <Table rows={[
+                  ['Denominación', GXA_ROLE],
+                  ['Rol',          'Desarrollo, mantenimiento y operación de la plataforma de gestión de citas bajo contrato de encargo (art. 28 RGPD)'],
+                  ['Contacto',     CONTACT_EMAIL],
+                ]} />
+              </div>
+            </div>
           </Section>
 
           {/* 2. Finalidad */}
@@ -99,9 +115,10 @@ export default function PrivacidadPage() {
               prestación del servicio intervienen los siguientes encargados del tratamiento:
             </P>
             <Table rows={[
-              ['Twilio Inc. (EE. UU.)',   'Envío de mensajes WhatsApp de confirmación y recordatorio. Opera bajo cláusulas contractuales tipo aprobadas por la Comisión Europea.'],
-              ['Supabase Inc. (EE. UU.)', 'Almacenamiento de la base de datos de citas. Opera bajo cláusulas contractuales tipo aprobadas por la Comisión Europea.'],
-              ['Vercel Inc. (EE. UU.)',   'Alojamiento de la aplicación web. Opera bajo cláusulas contractuales tipo aprobadas por la Comisión Europea.'],
+              ['GXA Studio (España)',      'Proveedor SaaS de la plataforma de reservas. Actúa como Encargado del Tratamiento bajo contrato expreso con la clínica (art. 28 RGPD).'],
+              ['Twilio Inc. (EE. UU.)',    'Envío de mensajes WhatsApp de confirmación y recordatorio. Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
+              ['Supabase Inc. (EE. UU.)',  'Almacenamiento cifrado de la base de datos de citas. Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
+              ['Vercel Inc. (EE. UU.)',    'Alojamiento y distribución de la aplicación web. Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
             ]} />
             <P className="mt-3">
               Todos los proveedores indicados actúan como encargados del tratamiento bajo
@@ -197,10 +214,10 @@ export default function PrivacidadPage() {
         {/* Footer */}
         <div className="mt-12 pt-8 border-t border-slate-200 text-center">
           <p className="text-xs text-slate-400">
-            {CLINIC_NAME} · {CLINIC_ADDR}
+            {CLINIC_NAME} · Plataforma gestionada por {GXA_ROLE}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            Contacto:{' '}
+            Contacto DPD:{' '}
             <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-primary transition-colors">
               {CONTACT_EMAIL}
             </a>

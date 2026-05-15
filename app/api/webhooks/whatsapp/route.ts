@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import { validateRequest } from 'twilio'
 import twilio from 'twilio'
 import { createServiceClient } from '@/lib/supabase/server'
-import { getBaseUrl } from '@/lib/utils'
 
 const CANCEL_KEYWORDS  = ['cancelar', 'anular', 'baja', 'cancel']
 const PRIVACY_KEYWORDS = ['rgpd', 'privacidad', 'datos', 'info', 'legal', 'informacion']
@@ -63,7 +62,11 @@ export async function POST(req: NextRequest) {
 
   const twiml = new twilio.twiml.MessagingResponse()
 
-  const appBaseUrl = getBaseUrl()
+  // x-forwarded-host is always injected by Vercel's edge and never resolves to localhost,
+  // making it the most reliable source for building outbound links in inbound webhook handlers.
+  const fwdProto  = req.headers.get('x-forwarded-proto') ?? 'https'
+  const fwdHost   = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
+  const appBaseUrl = `${fwdProto}://${fwdHost}`
 
   const hasCancel  = CANCEL_KEYWORDS.some((kw) => bodyText.includes(kw))
   const hasPrivacy = PRIVACY_KEYWORDS.some((kw) => bodyText.includes(kw))
