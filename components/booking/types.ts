@@ -26,6 +26,7 @@ export interface BookingState {
   slotStart:     string | null
   slotDoctors:   DoctorOption[]
   doctor:        DoctorOption | null
+  anySpecialist: boolean  // true when patient chose "Cualquier especialista" in DOCTOR_PRE
   patientName:   string
   patientPhone:  string
   appointmentId: string | null

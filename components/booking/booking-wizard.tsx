@@ -1,21 +1,38 @@
 'use client'
 import { useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { StepService }   from './step-service'
-import { StepSlot }      from './step-slot'
-import { StepDoctor }    from './step-doctor'
-import { StepPatient }   from './step-patient'
-import { StepConfirmed } from './step-confirmed'
+import { StepService }     from './step-service'
+import { StepDoctorPre }   from './step-doctor-pre'
+import { StepSlot }        from './step-slot'
+import { StepDoctor }      from './step-doctor'
+import { StepPatient }     from './step-patient'
+import { StepConfirmed }   from './step-confirmed'
 import type { ClinicBookingData, ServiceOption, DoctorOption, SlotWithDoctors, BookingState } from './types'
 
-// Time-First flow: Service → Slot (calendar) → Doctor (if >1) → Patient → Confirmed
-const STEPS = { SERVICE: 0, SLOT: 1, DOCTOR: 2, PATIENT: 3, CONFIRMED: 4 }
+// Flow:
+//   SERVICE → DOCTOR_PRE (pick specific or "any") → SLOT → [DOCTOR_POST if "any" + >1] → PATIENT → CONFIRMED
+const STEPS = {
+  SERVICE:     0,
+  DOCTOR_PRE:  1,  // pre-slot: choose specific doctor OR "Cualquier especialista"
+  SLOT:        2,
+  DOCTOR_POST: 3,  // post-slot: only for "any" path when >1 doctors are free at the chosen time
+  PATIENT:     4,
+  CONFIRMED:   5,
+}
 
-const TOTAL_STEPS = 4
-const STEP_LABELS = ['Servicio', 'Fecha', 'Médico', 'Datos']
+const TOTAL_STEPS  = 4
+const STEP_LABELS  = ['Servicio', 'Médico', 'Fecha', 'Datos']
+
+// DOCTOR_POST shares the SLOT position in the progress bar (it's a sub-step)
+function toProgressStep(step: number): number {
+  if (step === STEPS.DOCTOR_POST) return 2
+  if (step >= STEPS.PATIENT)      return 3
+  return step
+}
 
 function ProgressBar({ current }: { current: number }) {
-  const scaleX = current / TOTAL_STEPS
+  const progress = toProgressStep(current)
+  const scaleX   = progress / TOTAL_STEPS
   return (
     <div className="space-y-2 mb-6">
       <div className="flex items-center justify-between">
@@ -24,7 +41,7 @@ function ProgressBar({ current }: { current: number }) {
             <span
               key={i}
               className={`text-[11px] font-medium transition-colors ${
-                i < current ? 'text-primary' : i === current ? 'text-slate-700' : 'text-slate-300'
+                i < progress ? 'text-primary' : i === progress ? 'text-slate-700' : 'text-slate-300'
               }`}
             >
               {label}
@@ -34,7 +51,7 @@ function ProgressBar({ current }: { current: number }) {
             </span>
           ))}
         </div>
-        <span className="text-[11px] text-slate-400 tabular-nums">{current + 1}/{TOTAL_STEPS}</span>
+        <span className="text-[11px] text-slate-400 tabular-nums">{progress + 1}/{TOTAL_STEPS}</span>
       </div>
       <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
         <motion.div
@@ -55,6 +72,7 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
     slotStart:     null,
     slotDoctors:   [],
     doctor:        null,
+    anySpecialist: false,
     patientName:   '',
     patientPhone:  '',
     appointmentId: null,
@@ -66,39 +84,74 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
   // ─── Step handlers ────────────────────────────────────────────
 
   const selectService = useCallback((service: ServiceOption) => {
-    setState((s) => ({ ...s, step: STEPS.SLOT, service, slotStart: null, slotDoctors: [], doctor: null }))
+    setState((s) => ({
+      ...s,
+      step:          STEPS.DOCTOR_PRE,
+      service,
+      slotStart:     null,
+      slotDoctors:   [],
+      doctor:        null,
+      anySpecialist: false,
+    }))
+  }, [])
+
+  // Pre-slot doctor selection: null = "Cualquier especialista", DoctorOption = specific
+  const selectDoctorPre = useCallback((doctor: DoctorOption | null) => {
+    setState((s) => ({
+      ...s,
+      step:          STEPS.SLOT,
+      doctor,
+      anySpecialist: doctor === null,
+      slotStart:     null,
+      slotDoctors:   [],
+    }))
   }, [])
 
   const selectSlot = useCallback((slot: SlotWithDoctors) => {
-    if (slot.doctors.length === 1) {
-      setState((s) => ({
+    setState((s) => {
+      if (!s.anySpecialist) {
+        // Specific doctor path: skip DOCTOR_POST, go straight to PATIENT
+        return { ...s, step: STEPS.PATIENT, slotStart: slot.start, slotDoctors: slot.doctors }
+      }
+      // "Cualquier especialista" path
+      if (slot.doctors.length <= 1) {
+        // Auto-assign the only available doctor
+        return {
+          ...s,
+          step:        STEPS.PATIENT,
+          slotStart:   slot.start,
+          slotDoctors: slot.doctors,
+          doctor:      slot.doctors[0] ?? null,
+        }
+      }
+      // Multiple doctors available → let patient choose
+      return {
         ...s,
-        step:        STEPS.PATIENT,
-        slotStart:   slot.start,
-        slotDoctors: slot.doctors,
-        doctor:      slot.doctors[0],
-      }))
-    } else {
-      setState((s) => ({
-        ...s,
-        step:        STEPS.DOCTOR,
+        step:        STEPS.DOCTOR_POST,
         slotStart:   slot.start,
         slotDoctors: slot.doctors,
         doctor:      null,
-      }))
-    }
+      }
+    })
   }, [])
 
-  const selectDoctor = useCallback((doctor: DoctorOption) => {
+  // Post-slot doctor selection (only for "any specialist" path with >1 doctors)
+  const selectDoctorPost = useCallback((doctor: DoctorOption) => {
     setState((s) => ({ ...s, step: STEPS.PATIENT, doctor }))
   }, [])
 
   const goBack = useCallback(() => {
     setState((s) => {
-      if (s.step === STEPS.PATIENT && s.slotDoctors.length <= 1) {
-        return { ...s, step: STEPS.SLOT }
+      switch (s.step) {
+        case STEPS.DOCTOR_PRE:  return { ...s, step: STEPS.SERVICE }
+        case STEPS.SLOT:        return { ...s, step: STEPS.DOCTOR_PRE }
+        case STEPS.DOCTOR_POST: return { ...s, step: STEPS.SLOT }
+        case STEPS.PATIENT:
+          // "any specialist" + saw DOCTOR_POST → go back there
+          if (s.anySpecialist && s.slotDoctors.length > 1) return { ...s, step: STEPS.DOCTOR_POST }
+          return { ...s, step: STEPS.SLOT }
+        default: return { ...s, step: Math.max(0, s.step - 1) }
       }
-      return { ...s, step: Math.max(0, s.step - 1) }
     })
   }, [])
 
@@ -163,24 +216,35 @@ export function BookingWizard({ clinic }: { clinic: ClinicBookingData }) {
           />
         )}
 
+        {state.step === STEPS.DOCTOR_PRE && state.service && (
+          <StepDoctorPre
+            key="doctor-pre"
+            service={state.service}
+            doctors={state.service.doctors}
+            onSelect={selectDoctorPre}
+            onBack={goBack}
+          />
+        )}
+
         {state.step === STEPS.SLOT && state.service && (
           <StepSlot
             key="slot"
             service={state.service}
+            doctor={state.anySpecialist ? null : state.doctor}
             timezone={clinic.timezone}
             onSelect={selectSlot}
             onBack={goBack}
           />
         )}
 
-        {state.step === STEPS.DOCTOR && state.service && state.slotStart && (
+        {state.step === STEPS.DOCTOR_POST && state.service && state.slotStart && (
           <StepDoctor
-            key="doctor"
+            key="doctor-post"
             service={state.service}
             slotStart={state.slotStart}
             timezone={clinic.timezone}
             doctors={state.slotDoctors}
-            onSelect={selectDoctor}
+            onSelect={selectDoctorPost}
             onBack={goBack}
           />
         )}

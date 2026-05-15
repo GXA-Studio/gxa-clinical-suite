@@ -1,43 +1,25 @@
 'use client'
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import { ChevronRight, ArrowLeft } from 'lucide-react'
+import { ChevronRight, ArrowLeft, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ServiceOption, DoctorOption } from './types'
 
 interface Props {
-  service:   ServiceOption
-  slotStart: string
-  timezone:  string
-  doctors:   DoctorOption[]
-  onSelect:  (doctor: DoctorOption) => void
-  onBack:    () => void
+  service:  ServiceOption
+  doctors:  DoctorOption[]
+  onSelect: (doctor: DoctorOption | null) => void
+  onBack:   () => void
 }
 
 function initials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
 }
 
-function formatSlotTime(iso: string, timezone: string) {
-  return new Date(iso).toLocaleTimeString('es-ES', {
-    timeZone: timezone,
-    hour:     '2-digit',
-    minute:   '2-digit',
-    hour12:   false,
-  })
-}
-
-export const StepDoctor = memo(function StepDoctor({
-  service,
-  slotStart,
-  timezone,
-  doctors,
-  onSelect,
-  onBack,
-}: Props) {
+export const StepDoctorPre = memo(function StepDoctorPre({ service, doctors, onSelect, onBack }: Props) {
   return (
     <motion.div
-      key="step-doctor"
+      key="step-doctor-pre"
       initial={{ opacity: 0, x: 32 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -32 }}
@@ -49,14 +31,28 @@ export const StepDoctor = memo(function StepDoctor({
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Especialistas disponibles</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {service.name} · a las {formatSlotTime(slotStart, timezone)}
-          </p>
+          <h2 className="text-xl font-bold text-slate-900">Elige profesional</h2>
+          <p className="text-sm text-slate-500 mt-0.5">{service.name}</p>
         </div>
       </div>
 
       <div className="space-y-2.5">
+        {/* "Cualquier especialista" — combines availability of all doctors */}
+        <button
+          onClick={() => onSelect(null)}
+          className="w-full text-left rounded-xl border border-primary/30 bg-primary/5 p-4 hover:border-primary hover:shadow-sm active:scale-[0.99] transition-all group flex items-center gap-4"
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 shrink-0">
+            <Users className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-primary">Cualquier especialista</p>
+            <p className="text-xs text-slate-500 mt-0.5">Ver todos los horarios disponibles</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-primary/50 group-hover:text-primary shrink-0 transition-colors" />
+        </button>
+
+        {/* Individual doctors */}
         {doctors.map((doc) => (
           <button
             key={doc.id}

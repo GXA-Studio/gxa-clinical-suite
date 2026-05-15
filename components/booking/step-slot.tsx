@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale'
 import { Button }   from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { cn }       from '@/lib/utils'
-import type { ServiceOption, SlotWithDoctors } from './types'
+import type { ServiceOption, DoctorOption, SlotWithDoctors } from './types'
 
 function toDateParam(d: Date) {
   return [
@@ -33,12 +33,15 @@ function startOfDay(d = new Date()) {
 
 interface Props {
   service:  ServiceOption
+  // null  → "Cualquier especialista": calls Mode B (all doctors' availability)
+  // DoctorOption → specific doctor: calls Mode A (single doctor's availability)
+  doctor:   DoctorOption | null
   timezone: string
   onSelect: (slot: SlotWithDoctors) => void
   onBack:   () => void
 }
 
-export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
+export function StepSlot({ service, doctor, timezone, onSelect, onBack }: Props) {
   const today = useMemo(startOfDay, [])
 
   const [activeDow,    setActiveDow]    = useState<number[]>([])
@@ -65,14 +68,30 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
     setSlots([])
     setSelectedSlot(null)
 
-    fetch(`/api/slots?serviceId=${service.id}&date=${toDateParam(selectedDate)}`)
+    const dateParam = toDateParam(selectedDate)
+    const url = doctor
+      ? `/api/slots?serviceId=${service.id}&doctorId=${doctor.id}&date=${dateParam}`
+      : `/api/slots?serviceId=${service.id}&date=${dateParam}`
+
+    fetch(url)
       .then((r) => r.json())
-      .then((body) => { if (!cancelled) setSlots(body.slots ?? []) })
+      .then((body) => {
+        if (cancelled) return
+        if (doctor) {
+          // Mode A: { slots: string[] } — convert to SlotWithDoctors[]
+          setSlots(
+            (body.slots ?? []).map((start: string) => ({ start, doctors: [doctor] }))
+          )
+        } else {
+          // Mode B: { slots: Array<{ start, doctors[] }> }
+          setSlots(body.slots ?? [])
+        }
+      })
       .catch(() => { if (!cancelled) setSlots([]) })
       .finally(() => { if (!cancelled) setSlotsLoading(false) })
 
     return () => { cancelled = true }
-  }, [selectedDate, service.id])
+  }, [selectedDate, service.id, doctor])
 
   // 15-min grace: recompute every time slots arrive so the cutoff is always fresh
   const cutoff = useMemo(
@@ -81,7 +100,6 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
     [slots]
   )
 
-  // Filter out slots in the past (+ grace period) — only relevant for today
   const visibleSlots = useMemo(
     () => slots.filter((s) => new Date(s.start) > cutoff),
     [slots, cutoff]
@@ -123,7 +141,10 @@ export function StepSlot({ service, timezone, onSelect, onBack }: Props) {
         </Button>
         <div>
           <h2 className="text-xl font-bold text-slate-900">Elige fecha y hora</h2>
-          <p className="text-sm text-slate-500 mt-0.5">{service.name}</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {service.name}
+            {doctor && <> · {doctor.name}</>}
+          </p>
         </div>
       </div>
 

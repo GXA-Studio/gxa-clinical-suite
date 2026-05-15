@@ -1,7 +1,7 @@
 /**
- * E2E — Patient Booking Funnel (Time-First flow)
+ * E2E — Patient Booking Funnel
  *
- * Flow: Service → Slot (calendar date + time) → Doctor (if >1) → Patient → Confirmed
+ * Flow: Service → Doctor-Pre (pick specific or "any") → Slot → [Doctor-Post if "any"+>1] → Patient → Confirmed
  *
  * Works against BOTH environments:
  *   - Local:      PLAYWRIGHT_BASE_URL not set → webServer starts localhost:3000
@@ -26,7 +26,7 @@ const FIXTURE_URL = '/test-fixture'
 const SLOT_A = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 const SLOT_B = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()
 
-/** Two doctors → wizard shows the Doctor step */
+/** Two doctors → wizard shows the Doctor-Post step (only when "any specialist" path) */
 const MULTI_DOCTOR_SLOTS = {
   slots: [
     {
@@ -45,7 +45,7 @@ const MULTI_DOCTOR_SLOTS = {
   ],
 }
 
-/** One doctor → wizard skips Doctor step, goes straight to Patient */
+/** One doctor → wizard skips Doctor-Post step, goes straight to Patient */
 const SINGLE_DOCTOR_SLOTS = {
   slots: [
     {
@@ -74,7 +74,7 @@ async function setupMocks(page: Page, slots = SINGLE_DOCTOR_SLOTS) {
       body:        JSON.stringify({ activeDow: [] }),
     })
   )
-  // Mode-B slot response: array of { start, doctors[] }
+  // Mode-B slot response (or Mode-A-converted-to-SlotWithDoctors in specific-doctor path)
   await page.route('**/api/slots**', (route) =>
     route.fulfill({
       status:      200,
@@ -118,13 +118,21 @@ async function selectFirstTimeSlot(page: Page) {
   await confirmBtn.click()
 }
 
-/** Navigate to the Patient step via the single-doctor path (Cardiología). */
+/**
+ * Navigate to the Patient step via the specific-doctor path (Cardiología → Dr. Miguel Torres).
+ * Single-doctor service: DOCTOR_PRE → pick specific doctor → SLOT → PATIENT (no DOCTOR_POST).
+ */
 async function goToPatientStep(page: Page) {
   await page.goto(FIXTURE_URL)
   await page.getByText('Cardiología').click()
+
+  // NEW: DOCTOR_PRE step — pick specific doctor
+  await expect(page.getByText('Elige profesional')).toBeVisible({ timeout: 5_000 })
+  await page.getByText('Dr. Miguel Torres').click()
+
   await expect(page.getByText('Elige fecha y hora')).toBeVisible()
   await selectFirstCalendarDay(page)
-  await selectFirstTimeSlot(page)  // single-doctor slot → skips Doctor step
+  await selectFirstTimeSlot(page)  // single-doctor slot → skips DOCTOR_POST
   await expect(page.getByText('Tus datos')).toBeVisible()
 }
 
@@ -141,31 +149,29 @@ test.describe('Booking Funnel', () => {
     await expect(page.getByText('Cardiología')).toBeVisible()
   })
 
-  test('Step 2 — selecting a service shows the slot calendar', async ({ page }) => {
+  test('Step 2 — selecting a service shows the Doctor-Pre step', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
 
-    // Time-First flow: next step is slot calendar, not doctor list
-    await expect(page.getByText('Elige fecha y hora')).toBeVisible()
-    await expect(page.getByText('Consulta General')).toBeVisible() // service name shown in subtitle
-    // Calendar grid must appear (available-days API returns immediately)
-    await expect(page.locator('td button').first()).toBeVisible({ timeout: 8_000 })
+    // New flow: next step is DOCTOR_PRE (pick professional or "any")
+    await expect(page.getByText('Elige profesional')).toBeVisible()
+    await expect(page.getByText('Cualquier especialista')).toBeVisible()
+    await expect(page.getByText('Dra. Laura Martínez')).toBeVisible()
+    await expect(page.getByText('Dr. Carlos Pérez')).toBeVisible()
   })
 
-  test('Step 3 — selecting a calendar day loads time-slot grid', async ({ page }) => {
+  test('Step 3 — picking "Cualquier especialista" shows the slot calendar', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
+    await expect(page.getByText('Elige profesional')).toBeVisible()
+    await page.getByText('Cualquier especialista').click()
+
     await expect(page.getByText('Elige fecha y hora')).toBeVisible()
-
-    await selectFirstCalendarDay(page)
-
-    // Time slot buttons (HH:MM) must appear after day selection
-    const slotBtn = page.locator('button', { hasText: /^\d{2}:\d{2}$/ }).first()
-    await expect(slotBtn).toBeVisible({ timeout: 8_000 })
+    await expect(page.locator('td button').first()).toBeVisible({ timeout: 8_000 })
   })
 
   test('Step 3b — clicking a time slot shows the Confirmar CTA', async ({ page }) => {
@@ -173,6 +179,8 @@ test.describe('Booking Funnel', () => {
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
+    await page.getByText('Cualquier especialista').click()
+
     await expect(page.getByText('Elige fecha y hora')).toBeVisible()
     await selectFirstCalendarDay(page)
 
@@ -184,21 +192,24 @@ test.describe('Booking Funnel', () => {
     await expect(page.locator('button', { hasText: /^Confirmar \d{2}:\d{2}$/ })).toBeVisible()
   })
 
-  test('Step 4 — confirming a slot with multiple doctors shows Elige profesional', async ({ page }) => {
-    // Use the multi-doctor slot mock so the wizard enters the Doctor step
+  test('Step 4 — "any specialist" + multi-doctor slot shows Especialistas disponibles', async ({ page }) => {
+    // Use multi-doctor slots so DOCTOR_POST step is triggered
     await setupMocks(page, MULTI_DOCTOR_SLOTS)
     await page.goto(FIXTURE_URL)
 
     await page.getByText('Consulta General').click()
+    // DOCTOR_PRE: choose "any specialist" to see combined availability
+    await expect(page.getByText('Cualquier especialista')).toBeVisible()
+    await page.getByText('Cualquier especialista').click()
+
     await expect(page.getByText('Elige fecha y hora')).toBeVisible()
     await selectFirstCalendarDay(page)
-    await selectFirstTimeSlot(page)  // first slot has 2 doctors → Doctor step
+    await selectFirstTimeSlot(page)  // SLOT_A has 2 doctors → DOCTOR_POST
 
-    await expect(page.getByText('Elige profesional')).toBeVisible()
+    // DOCTOR_POST step — post-slot specialist selection
+    await expect(page.getByText('Especialistas disponibles')).toBeVisible()
     await expect(page.getByText('Dra. Laura Martínez')).toBeVisible()
     await expect(page.getByText('Dr. Carlos Pérez')).toBeVisible()
-    // "Any doctor" option is always present
-    await expect(page.getByText('Cualquier profesional disponible')).toBeVisible()
   })
 
   test('Step 5 — GDPR checkbox is mandatory to enable the submit button', async ({ page }) => {
@@ -236,7 +247,7 @@ test.describe('Booking Funnel', () => {
     await expect(page.getByText('¡Cita confirmada!')).toBeVisible({ timeout: 10_000 })
   })
 
-  test('Full funnel — happy path end-to-end (Time-First flow)', async ({ page }) => {
+  test('Full funnel — happy path end-to-end (specific doctor)', async ({ page }) => {
     await setupMocks(page)
     await page.goto(FIXTURE_URL)
 
@@ -244,11 +255,16 @@ test.describe('Booking Funnel', () => {
     await expect(page.getByText('¿Qué servicio necesitas?')).toBeVisible()
     await page.getByText('Cardiología').click()
 
-    // Step 2: Calendar appears
+    // Step 2: DOCTOR_PRE — pick specific doctor
+    await expect(page.getByText('Elige profesional')).toBeVisible()
+    await expect(page.getByText('Cualquier especialista')).toBeVisible()
+    await page.getByText('Dr. Miguel Torres').click()
+
+    // Step 3: Calendar appears
     await expect(page.getByText('Elige fecha y hora')).toBeVisible()
     await selectFirstCalendarDay(page)
 
-    // Step 3: Select time slot + confirm (single doctor → skips Doctor step)
+    // Select time slot + confirm (single doctor → skips DOCTOR_POST)
     const slotBtn = page.locator('button', { hasText: /^\d{2}:\d{2}$/ }).first()
     await expect(slotBtn).toBeVisible({ timeout: 8_000 })
     await slotBtn.click()

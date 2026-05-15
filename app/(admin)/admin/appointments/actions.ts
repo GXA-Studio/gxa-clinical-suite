@@ -26,7 +26,7 @@ export async function cancelAppointment(id: string) {
     .update({ status: 'cancelled' })
     .eq('id', id)
     .eq('clinic_id', clinicId)
-    .in('status', ['pending', 'confirmed'])
+    .in('status', ['confirmed'])
 
   if (error) return { error: error.message }
 

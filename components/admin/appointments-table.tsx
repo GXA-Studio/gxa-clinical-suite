@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled'
+type AppointmentStatus = 'confirmed' | 'cancelled'
 
 interface AppointmentRow {
   id: string
@@ -37,13 +37,11 @@ interface AppointmentRow {
 }
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
-  pending:   'Pendiente',
   confirmed: 'Confirmada',
   cancelled: 'Cancelada',
 }
 
 const STATUS_VARIANTS: Record<AppointmentStatus, 'secondary' | 'success' | 'destructive'> = {
-  pending:   'secondary',
   confirmed: 'success',
   cancelled: 'destructive',
 }
@@ -95,18 +93,16 @@ export function AppointmentsTable({
 
   const stats = {
     total:     initial.length,
-    pending:   initial.filter((a) => a.status === 'pending').length,
     confirmed: initial.filter((a) => a.status === 'confirmed').length,
     cancelled: initial.filter((a) => a.status === 'cancelled').length,
   }
 
   return (
     <>
-      {/* Stats strip — 2 cols on mobile, 4 on sm+ */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Stats strip — 2 cols on mobile, 3 on sm+ */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {([
           { label: 'Total',       value: stats.total,     color: 'text-slate-700' },
-          { label: 'Pendientes',  value: stats.pending,   color: 'text-amber-600' },
           { label: 'Confirmadas', value: stats.confirmed, color: 'text-emerald-600' },
           { label: 'Canceladas',  value: stats.cancelled, color: 'text-rose-600' },
         ] as const).map((s) => (
@@ -127,7 +123,6 @@ export function AppointmentsTable({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="pending">Pendientes</SelectItem>
             <SelectItem value="confirmed">Confirmadas</SelectItem>
             <SelectItem value="cancelled">Canceladas</SelectItem>
           </SelectContent>

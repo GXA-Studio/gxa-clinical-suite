@@ -81,7 +81,7 @@ async function AppointmentsSection({
     .limit(200)
 
   if (status && status !== 'all') {
-    query = query.eq('status', status as 'pending' | 'confirmed' | 'cancelled')
+    query = query.eq('status', status as 'confirmed' | 'cancelled')
   }
   if (date) {
     const dayStart = new Date(date + 'T00:00:00.000Z').toISOString()
