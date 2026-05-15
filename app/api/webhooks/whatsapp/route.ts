@@ -4,6 +4,7 @@ import twilio from 'twilio'
 import { createServiceClient } from '@/lib/supabase/server'
 
 const CANCEL_KEYWORDS  = ['cancelar', 'anular', 'baja', 'cancel']
+const MODIFY_KEYWORDS  = ['modificar', 'cambiar', 'reprogramar', 'mover', 'reschedule', 'cambio', 'reagendar']
 const PRIVACY_KEYWORDS = ['rgpd', 'privacidad', 'datos', 'info', 'legal', 'informacion']
 
 function stripWhatsappPrefix(from: string): string {
@@ -69,9 +70,35 @@ export async function POST(req: NextRequest) {
   const appBaseUrl = `${fwdProto}://${fwdHost}`
 
   const hasCancel  = CANCEL_KEYWORDS.some((kw) => bodyText.includes(kw))
+  const hasModify  = !hasCancel && MODIFY_KEYWORDS.some((kw) => bodyText.includes(kw))
   const hasPrivacy = PRIVACY_KEYWORDS.some((kw) => bodyText.includes(kw))
 
-  if (hasCancel) {
+  if (hasModify) {
+    const supabase = createServiceClient()
+
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('id, starts_at, cancellation_token')
+      .eq('patient_phone', phone)
+      .eq('status', 'confirmed')
+      .gt('starts_at', new Date().toISOString())
+      .order('starts_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (!appt) {
+      twiml.message(
+        'No encontramos ninguna cita próxima asociada a este número. ' +
+        'Si crees que es un error, contacta directamente con tu clínica.'
+      )
+    } else {
+      twiml.message(
+        '📅 Para modificar la fecha u hora de tu cita, entra en tu enlace personal:\n\n' +
+        `${appBaseUrl}/manage/${appt.cancellation_token}\n\n` +
+        'Desde ahí podrás elegir un nuevo horario o cancelar si lo prefieres.'
+      )
+    }
+  } else if (hasCancel) {
     const supabase = createServiceClient()
 
     const { data: appt } = await supabase
@@ -111,9 +138,10 @@ export async function POST(req: NextRequest) {
   } else {
     twiml.message(
       '👋 Hola. ¿En qué puedo ayudarte?\n\n' +
+      'Para *modificar tu cita* (cambiar fecha u hora) escribe "modificar".\n' +
       'Para *cancelar tu cita* escribe "cancelar".\n' +
       'Para información sobre privacidad y RGPD escribe "info".\n' +
-      'También puedes cancelar usando el enlace que te enviamos al confirmar.\n\n' +
+      'También puedes gestionar tu cita usando el enlace que te enviamos al confirmar.\n\n' +
       'Para cualquier otra consulta, contacta directamente con tu clínica.'
     )
   }

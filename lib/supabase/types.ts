@@ -460,6 +460,36 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      reschedule_appointment: {
+        Args: {
+          p_cancellation_token: string
+          p_new_doctor_id:      string
+          p_new_starts_at:      string
+        }
+        Returns: {
+          cancellation_token: string
+          clinic_id: string
+          created_at: string
+          doctor_id: string
+          ends_at: string
+          id: string
+          notes: string | null
+          otp_code_hash: string | null
+          otp_expires_at: string | null
+          patient_name: string
+          patient_phone: string
+          reminder_sent: boolean
+          service_id: string
+          starts_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "appointments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       get_active_dow_for_service: {
         Args: { p_service_id: string }
         Returns: {

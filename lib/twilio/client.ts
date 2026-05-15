@@ -84,7 +84,7 @@ export async function sendWhatsAppConfirmation({
   const msgBody  =
     `¡Hola ${patientName}! Cita confirmada en ${clinicName}.\n` +
     `Especialista: ${doctorName}. Fecha: ${dateStr}.\n\n` +
-    `🔗 Cancelar con un clic: ${baseUrl}/cancel/${cancellationToken}\n\n` +
+    `⚙️ Gestionar cita (Modificar o Cancelar): ${baseUrl}/manage/${cancellationToken}\n\n` +
     `Nota legal (AEPD): Tratamos tus datos según el RGPD. Responde INFO para más detalles.`
 
   const payload = { to: toWa, from: WHATSAPP_FROM, body: msgBody }
@@ -126,6 +126,6 @@ export async function sendWhatsAppReminder({
     body:
       `⏰ Recordatorio: ${patientName}, mañana tienes cita en ${clinicName}.\n` +
       `Especialista: ${doctorName}. Fecha: ${dateStr}.\n\n` +
-      `¿No puedes venir? Cancela aquí: ${baseUrl}/cancel/${cancellationToken}`,
+      `⚙️ Gestiona tu cita (modificar o cancelar): ${baseUrl}/manage/${cancellationToken}`,
   })
 }
