@@ -135,13 +135,24 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
     fetch(`/api/slots/week?${params}`)
       .then((r) => r.json())
       .then(({ dates: d, slots: s }) => {
-        if (!cancelled) {
-          setDates(d ?? [])
-          setWeekSlots(s ?? {})
-        }
+        if (cancelled) return
+        console.log('[BookingSearch] API /slots/week →', {
+          url:          `/api/slots/week?${params}`,
+          datesCount:   (d ?? []).length,
+          doctorIds:    Object.keys(s ?? {}),
+          slotsPerDoc:  Object.fromEntries(
+            Object.entries(s ?? {}).map(([id, byDate]) => [
+              id,
+              Object.values(byDate as Record<string, unknown[]>).reduce((n, arr) => n + arr.length, 0),
+            ])
+          ),
+        })
+        setDates(d ?? [])
+        setWeekSlots(s ?? {})
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) { setDates([]); setWeekSlots({}) }
+        console.error('[BookingSearch] fetch /slots/week failed:', err)
       })
       .finally(() => { if (!cancelled) setSlotsLoading(false) })
 
@@ -181,20 +192,38 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
   // ─── FASE 1: Aggregated slots (union of all insurance-filtered doctors) ───
   const aggregatedSlots = useMemo((): Record<string, string[]> => {
     if (filters.doctorId !== null) return {}
+
     const byDate: Record<string, Set<string>> = {}
-    for (const doc of doctorsToDisplay) {
-      const docSlots = weekSlots[doc.id] ?? {}
-      for (const [date, isos] of Object.entries(docSlots)) {
-        if (!byDate[date]) byDate[date] = new Set()
-        for (const iso of isos) byDate[date].add(iso)
+
+    if (filters.insuranceId) {
+      // Insurance filter active: only include slots from doctors that pass it.
+      // We match against doctorsToDisplay (which already applied the filter).
+      const allowedIds = new Set(doctorsToDisplay.map((d) => d.id))
+      for (const [doctorId, docSlots] of Object.entries(weekSlots)) {
+        if (!allowedIds.has(doctorId)) continue
+        for (const [date, isos] of Object.entries(docSlots)) {
+          if (!byDate[date]) byDate[date] = new Set()
+          for (const iso of isos) byDate[date].add(iso)
+        }
+      }
+    } else {
+      // No insurance filter: iterate weekSlots directly — no doctor-ID lookup needed.
+      for (const docSlots of Object.values(weekSlots)) {
+        for (const [date, isos] of Object.entries(docSlots)) {
+          if (!byDate[date]) byDate[date] = new Set()
+          for (const iso of isos) byDate[date].add(iso)
+        }
       }
     }
+
     const result: Record<string, string[]> = {}
     for (const [date, set] of Object.entries(byDate)) {
       result[date] = [...set].sort()
     }
+
+    console.log('Aggregated Slots:', result)
     return result
-  }, [weekSlots, doctorsToDisplay, filters.doctorId])
+  }, [weekSlots, doctorsToDisplay, filters.doctorId, filters.insuranceId])
 
   // ─── Slot click handlers ──────────────────────────────────────────────────
 

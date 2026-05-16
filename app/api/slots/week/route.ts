@@ -51,11 +51,14 @@ export async function GET(req: NextRequest) {
     dates.map(async (date) => {
       if (doctorId) {
         // Single-doctor mode: get_available_slots (doctor-first RPC)
-        const { data } = await supabase.rpc('get_available_slots', {
+        const { data, error } = await supabase.rpc('get_available_slots', {
           p_doctor_id:  doctorId,
           p_service_id: serviceId,
           p_date:       date,
         })
+        if (error) {
+          console.error('[slots/week] get_available_slots error:', { date, doctorId, error })
+        }
         return {
           date,
           rows: ((data ?? []) as { slot_start: string }[]).map((s) => ({
@@ -68,10 +71,13 @@ export async function GET(req: NextRequest) {
       }
 
       // All-doctors mode: get_slots_for_service (service-first RPC)
-      const { data } = await supabase.rpc('get_slots_for_service', {
+      const { data, error } = await supabase.rpc('get_slots_for_service', {
         p_service_id: serviceId,
         p_date:       date,
       })
+      if (error) {
+        console.error('[slots/week] get_slots_for_service error:', { date, serviceId, error })
+      }
       return { date, rows: ((data ?? []) as ServiceFirstRow[]) }
     })
   )
