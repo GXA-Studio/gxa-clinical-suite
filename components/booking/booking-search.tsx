@@ -19,7 +19,14 @@ import type {
 } from './types'
 
 function todayString(): string {
-  return new Date().toISOString().slice(0, 10)
+  // Use local clock so the boundary is correct for users in UTC+ timezones
+  // (UTC ISO would give "yesterday" during late evening in e.g. Spain UTC+2)
+  const d = new Date()
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
 }
 
 function formatTime(iso: string, timezone: string): string {

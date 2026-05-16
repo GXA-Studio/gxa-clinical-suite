@@ -70,6 +70,7 @@ export interface SendWhatsAppConfirmationParams {
   patientName: string
   clinicName: string
   doctorName: string
+  serviceName: string       // e.g. "Consulta General"
   startsAt: string          // UTC ISO
   timezone: string
   cancellationToken: string
@@ -77,13 +78,14 @@ export interface SendWhatsAppConfirmationParams {
 }
 
 export async function sendWhatsAppConfirmation({
-  to, patientName, clinicName, doctorName, startsAt, timezone, cancellationToken, baseUrl,
+  to, patientName, clinicName, doctorName, serviceName, startsAt, timezone, cancellationToken, baseUrl,
 }: SendWhatsAppConfirmationParams): Promise<void> {
   const dateStr  = formatSmsDateTime(startsAt, timezone)
   const toWa     = `whatsapp:${to}`
   const msgBody  =
-    `¡Hola ${patientName}! Cita confirmada en ${clinicName}.\n` +
-    `Especialista: ${doctorName}. Fecha: ${dateStr}.\n\n` +
+    `¡Hola ${patientName}! Tu cita para *${serviceName}* ha sido confirmada en ${clinicName}.\n` +
+    `👨‍⚕️ Profesional: ${doctorName}\n` +
+    `📅 Fecha: ${dateStr}\n\n` +
     `⚙️ Gestionar cita (Modificar o Cancelar): ${baseUrl}/manage/${cancellationToken}\n\n` +
     `Nota legal (AEPD): Tratamos tus datos según el RGPD. Responde INFO para más detalles.`
 

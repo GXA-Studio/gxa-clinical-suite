@@ -102,11 +102,10 @@ export async function bookAppointmentManual(data: BookManualFormData) {
     cancellation_token: string
   }
 
-  const { data: doctor } = await supabase
-    .from('doctors')
-    .select('name')
-    .eq('id', doctorId)
-    .single()
+  const [{ data: doctor }, { data: service }] = await Promise.all([
+    supabase.from('doctors').select('name').eq('id', doctorId).single(),
+    supabase.from('services').select('name').eq('id', serviceId).single(),
+  ])
 
   const baseUrl = getBaseUrl()
 
@@ -118,6 +117,7 @@ export async function bookAppointmentManual(data: BookManualFormData) {
       patientName:       name,
       clinicName:        (clinic as { name: string }).name,
       doctorName:        doctor?.name ?? 'tu médico',
+      serviceName:       service?.name ?? 'consulta',
       startsAt:          appt.starts_at,
       timezone:          (clinic as { timezone: string }).timezone,
       cancellationToken: appt.cancellation_token,
