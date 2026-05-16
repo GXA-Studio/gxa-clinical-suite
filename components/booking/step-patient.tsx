@@ -71,11 +71,23 @@ export function StepPatient({
       </div>
 
       {/* Booking summary */}
-      <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-1">
-        <p className="text-xs text-primary font-semibold uppercase tracking-wide">Resumen de tu cita</p>
-        <p className="text-sm font-semibold text-slate-800">{service.name}</p>
-        <p className="text-sm text-slate-600">{doctor.name}{doctor.specialty ? ` · ${doctor.specialty}` : ''}</p>
-        <p className="text-sm text-slate-600 capitalize">{formatSlotHuman(slotStart, timezone)}</p>
+      <div className="rounded-xl bg-primary/5 border border-primary/20 p-4">
+        <p className="text-xs text-primary font-semibold uppercase tracking-wide mb-3">Resumen de tu cita</p>
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1.5 text-sm">
+          <dt className="font-semibold text-slate-500">Tipo de cita</dt>
+          <dd className="font-medium text-slate-900">{service.name}</dd>
+
+          <dt className="font-semibold text-slate-500">Profesional</dt>
+          <dd className="font-medium text-slate-900">
+            {doctor.name}
+            {doctor.specialty && (
+              <span className="font-normal text-slate-500"> · {doctor.specialty}</span>
+            )}
+          </dd>
+
+          <dt className="font-semibold text-slate-500">Fecha y hora</dt>
+          <dd className="font-medium text-slate-900 capitalize">{formatSlotHuman(slotStart, timezone)}</dd>
+        </dl>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">

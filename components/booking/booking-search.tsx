@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Loader2, SearchX, CheckCircle2, CalendarDays } from 'lucide-react'
+import { addDays, format, parseISO } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { ChevronLeft, ChevronRight, Loader2, SearchX, CheckCircle2, CalendarDays } from 'lucide-react'
 import { Button }               from '@/components/ui/button'
 import { SearchBar }            from './search-bar'
 import { DoctorResultCard }     from './doctor-result-card'
@@ -27,6 +29,47 @@ function formatTime(iso: string, timezone: string): string {
     minute:   '2-digit',
     hour12:   false,
   })
+}
+
+// ─── Week navigation bar ──────────────────────────────────────────────────────
+
+function WeekNav({
+  label,
+  isPrevDisabled,
+  onPrev,
+  onNext,
+}: {
+  label:          string
+  isPrevDisabled: boolean
+  onPrev:         () => void
+  onNext:         () => void
+}) {
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7"
+        disabled={isPrevDisabled}
+        onClick={onPrev}
+        aria-label="Semana anterior"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </Button>
+      <span className="text-xs text-slate-500 font-medium px-0.5 min-w-[112px] text-center select-none">
+        {label}
+      </span>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7"
+        onClick={onNext}
+        aria-label="Semana siguiente"
+      >
+        <ChevronRight className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
 }
 
 // ─── Success screen ───────────────────────────────────────────────────────────
@@ -167,6 +210,23 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
     () => services.find((s) => s.id === filters.serviceId) ?? services[0],
     [services, filters.serviceId]
   )
+
+  // ─── Week pagination ──────────────────────────────────────────────────────
+  const weekLabel = useMemo(() => {
+    const start = parseISO(filters.date)
+    const end   = addDays(start, 6)
+    const fmt   = (d: Date) => format(d, 'd MMM', { locale: es })
+    return `${fmt(start)} – ${fmt(end)}`
+  }, [filters.date])
+
+  const isPrevDisabled = filters.date <= todayString()
+
+  function prevWeek() {
+    handleFilterChange({ date: addDays(parseISO(filters.date), -7).toISOString().slice(0, 10) })
+  }
+  function nextWeek() {
+    handleFilterChange({ date: addDays(parseISO(filters.date), 7).toISOString().slice(0, 10) })
+  }
 
   // Doctors list filtered by insurance (and by specific doctor if selected).
   // Used both for the per-doctor card view and to look up which doctors
@@ -347,7 +407,7 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
                       <CalendarDays className="h-5 w-5 text-primary" />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 text-base leading-tight">
                         Horarios disponibles en la clínica
                       </h3>
@@ -355,6 +415,12 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
                         Elige una hora. Si hay varios profesionales disponibles podrás escoger al que prefieras.
                       </p>
                     </div>
+                    <WeekNav
+                      label={weekLabel}
+                      isPrevDisabled={isPrevDisabled}
+                      onPrev={prevWeek}
+                      onNext={nextWeek}
+                    />
                   </div>
 
                   <div className="border-t border-slate-100 mx-5" />
@@ -373,6 +439,14 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
             ) : (
               // ── Per-doctor cards (specific doctor selected) ──────────────
               <div className="space-y-4">
+                <div className="flex justify-end pr-1">
+                  <WeekNav
+                    label={weekLabel}
+                    isPrevDisabled={isPrevDisabled}
+                    onPrev={prevWeek}
+                    onNext={nextWeek}
+                  />
+                </div>
                 {doctorsToDisplay.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white p-12 text-center">
                     <SearchX className="h-8 w-8 text-slate-300" />
