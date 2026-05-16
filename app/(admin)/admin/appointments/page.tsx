@@ -5,6 +5,8 @@ import { NewAppointmentDialog } from '@/components/admin/new-appointment-dialog'
 import { getAdminProfile } from '@/lib/admin/profile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Plus } from 'lucide-react'
 
 // ─── Inner skeleton (table area only) ────────────────────────────────────────
 // Shown by the Suspense boundary while appointments stream in.
@@ -93,18 +95,11 @@ async function AppointmentsSection({
   return <AppointmentsTable appointments={appointments ?? []} timezone={timezone} />
 }
 
-// ─── Page shell (renders immediately) ────────────────────────────────────────
-export default async function AppointmentsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string; date?: string }>
-}) {
-  const { status, date } = await searchParams
-  // React.cache() deduplication: getAdminProfile() already resolved by layout — 0 extra roundtrip
-  const { clinicId, timezone } = await getAdminProfile()
+// ─── Dialog data loader (inside its own Suspense) ────────────────────────────
+// Fetches doctors+services only when needed for the dialog, in parallel with
+// the appointments table — not on the critical path for the page shell.
+async function DialogLoader({ clinicId }: { clinicId: string }) {
   const supabase = await createClient()
-
-  // Fast parallel fetch for the "Nueva cita" dialog (~50 ms, runs while layout still streaming)
   const [{ data: doctors }, { data: services }] = await Promise.all([
     supabase
       .from('doctors')
@@ -119,10 +114,21 @@ export default async function AppointmentsPage({
       .eq('is_active', true)
       .order('name'),
   ])
+  return <NewAppointmentDialog doctors={doctors ?? []} services={services ?? []} />
+}
+
+// ─── Page shell (renders immediately after getAdminProfile resolves) ──────────
+export default async function AppointmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; date?: string }>
+}) {
+  const { status, date } = await searchParams
+  const { clinicId, timezone } = await getAdminProfile()
 
   return (
     <div className="space-y-6">
-      {/* Header — visible as soon as doctors+services resolve (~50 ms) */}
+      {/* Header — visible immediately after profile resolves */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Citas</h1>
@@ -130,13 +136,18 @@ export default async function AppointmentsPage({
             Historial y gestión de todas las citas de la clínica.
           </p>
         </div>
-        <NewAppointmentDialog
-          doctors={doctors ?? []}
-          services={services ?? []}
-        />
+        {/* Dialog data streams in parallel with the table — no longer on critical path */}
+        <Suspense fallback={
+          <Button size="sm" className="gap-1.5" disabled>
+            <Plus className="h-4 w-4" />
+            Nueva cita
+          </Button>
+        }>
+          <DialogLoader clinicId={clinicId} />
+        </Suspense>
       </div>
 
-      {/* Table — streams in independently once appointments query resolves (~200 ms) */}
+      {/* Table — streams in independently once appointments query resolves */}
       <Suspense fallback={<AppointmentsTableSkeleton />}>
         <AppointmentsSection
           clinicId={clinicId}
