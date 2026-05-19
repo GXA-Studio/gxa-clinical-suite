@@ -1,7 +1,8 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useTransition } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { addDays, format, parseISO } from 'date-fns'
+import { findNextAvailableDate } from '@/app/(booking)/[clinicSlug]/actions'
 import { es } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, SearchX, CheckCircle2, CalendarDays } from 'lucide-react'
 import { Button }               from '@/components/ui/button'
@@ -169,12 +170,16 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
   const [isConfirmed,      setIsConfirmed]      = useState(false)
   const [confirmedPatient, setConfirmedPatient] = useState('')
 
+  const [isSearchingNext, startNextTransition] = useTransition()
+  const [noNextAvailable, setNoNextAvailable]  = useState(false)
+
   useEffect(() => {
     if (!filters.serviceId) return
     let cancelled = false
     setSlotsLoading(true)
     setWeekSlots({})
     setDates([])
+    setNoNextAvailable(false)
 
     const params = new URLSearchParams({
       serviceId: filters.serviceId,
@@ -364,6 +369,20 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
     setDates([])
   }
 
+  function handleFindNext() {
+    setNoNextAvailable(false)
+    startNextTransition(async () => {
+      // Start the search from the day immediately after the current 7-day window
+      const nextStart = format(addDays(parseISO(filters.date), 7), 'yyyy-MM-dd')
+      const found = await findNextAvailableDate(filters.serviceId, filters.doctorId, nextStart)
+      if (found) {
+        handleFilterChange({ date: found })
+      } else {
+        setNoNextAvailable(true)
+      }
+    })
+  }
+
   return (
     <AnimatePresence mode="wait">
       {isConfirmed ? (
@@ -439,6 +458,9 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
                       timezone={clinic.timezone}
                       timeOfDay={filters.timeOfDay}
                       onSlotClick={handleAggregatedSlotClick}
+                      onFindNext={handleFindNext}
+                      isSearchingNext={isSearchingNext}
+                      noNextAvailable={noNextAvailable}
                     />
                   </div>
                 </div>
@@ -479,6 +501,9 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
                       timezone={clinic.timezone}
                       timeOfDay={filters.timeOfDay}
                       onSlotClick={handleSlotClick}
+                      onFindNext={handleFindNext}
+                      isSearchingNext={isSearchingNext}
+                      noNextAvailable={noNextAvailable}
                     />
                   ))
                 )}

@@ -1,18 +1,23 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarX, Loader2, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TimeOfDay } from './types'
+
+const EMPTY_STATE_MAX_DAYS = 45
 
 const INITIAL_VISIBLE  = 3
 const MOBILE_PAGE_SIZE = 3
 
 interface Props {
-  slots:       Record<string, string[]>  // YYYY-MM-DD → ISO UTC starts
-  dates:       string[]                  // 7 YYYY-MM-DD strings
-  timezone:    string
-  timeOfDay:   TimeOfDay
-  onSlotClick: (slotStart: string) => void
+  slots:            Record<string, string[]>  // YYYY-MM-DD → ISO UTC starts
+  dates:            string[]                  // 7 YYYY-MM-DD strings
+  timezone:         string
+  timeOfDay:        TimeOfDay
+  onSlotClick:      (slotStart: string) => void
+  onFindNext?:      () => void
+  isSearchingNext?: boolean
+  noNextAvailable?: boolean
 }
 
 function localHour(iso: string, timezone: string): number {
@@ -95,7 +100,16 @@ function DayCol({ date, colSlots, colIdx, expandedCols, timezone, onSlotClick, o
   )
 }
 
-export function WeeklyGrid({ slots, dates, timezone, timeOfDay, onSlotClick }: Props) {
+export function WeeklyGrid({
+  slots,
+  dates,
+  timezone,
+  timeOfDay,
+  onSlotClick,
+  onFindNext,
+  isSearchingNext,
+  noNextAvailable,
+}: Props) {
   const [expandedCols, setExpandedCols] = useState<Set<number>>(new Set())
   const [mobilePage,   setMobilePage]   = useState(0)
 
@@ -127,10 +141,49 @@ export function WeeklyGrid({ slots, dates, timezone, timeOfDay, onSlotClick }: P
 
   if (!hasAnySlot) {
     return (
-      <p className="text-xs text-slate-400 py-3 text-center">
-        Sin disponibilidad en los próximos 7 días
-        {timeOfDay !== 'all' && ' con este filtro de horario'}
-      </p>
+      <div className="flex flex-col items-center justify-center gap-4 py-8 pb-28 lg:pb-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+          <CalendarX className="h-7 w-7 text-slate-400" />
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-slate-600">
+            No hay horarios disponibles en esta semana
+          </p>
+          {timeOfDay !== 'all' && (
+            <p className="text-xs text-slate-400">con el filtro de horario seleccionado</p>
+          )}
+        </div>
+
+        {noNextAvailable ? (
+          <p className="text-xs text-slate-400 max-w-[240px] leading-relaxed">
+            No encontramos disponibilidad en los próximos {EMPTY_STATE_MAX_DAYS} días
+          </p>
+        ) : onFindNext ? (
+          <button
+            onClick={onFindNext}
+            disabled={isSearchingNext}
+            className={cn(
+              'flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5',
+              'px-4 py-2.5 text-sm font-semibold text-primary',
+              'hover:bg-primary hover:text-white hover:border-primary',
+              'transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed'
+            )}
+          >
+            {isSearchingNext ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Buscando…
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4" />
+                Buscar próximo hueco libre
+              </>
+            )}
+          </button>
+        ) : null}
+      </div>
     )
   }
 

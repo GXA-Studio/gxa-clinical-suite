@@ -3,15 +3,18 @@ import { WeeklyGrid } from './weekly-grid'
 import type { DoctorOption, ServiceOption, InsuranceOption, TimeOfDay } from './types'
 
 interface Props {
-  doctor:        DoctorOption
-  service:       ServiceOption
-  insuranceIds:  string[]
-  allInsurances: InsuranceOption[]
-  slots:         Record<string, string[]>
-  dates:         string[]
-  timezone:      string
-  timeOfDay:     TimeOfDay
-  onSlotClick:   (slotStart: string, doctor: DoctorOption) => void
+  doctor:           DoctorOption
+  service:          ServiceOption
+  insuranceIds:     string[]
+  allInsurances:    InsuranceOption[]
+  slots:            Record<string, string[]>
+  dates:            string[]
+  timezone:         string
+  timeOfDay:        TimeOfDay
+  onSlotClick:      (slotStart: string, doctor: DoctorOption) => void
+  onFindNext?:      () => void
+  isSearchingNext?: boolean
+  noNextAvailable?: boolean
 }
 
 function DoctorAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) {
@@ -40,6 +43,7 @@ function DoctorAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string | 
 export function DoctorResultCard({
   doctor, service, insuranceIds, allInsurances,
   slots, dates, timezone, timeOfDay, onSlotClick,
+  onFindNext, isSearchingNext, noNextAvailable,
 }: Props) {
   const docInsurances = allInsurances.filter((ins) => insuranceIds.includes(ins.id))
 
@@ -90,6 +94,9 @@ export function DoctorResultCard({
           timezone={timezone}
           timeOfDay={timeOfDay}
           onSlotClick={(iso) => onSlotClick(iso, doctor)}
+          onFindNext={onFindNext}
+          isSearchingNext={isSearchingNext}
+          noNextAvailable={noNextAvailable}
         />
       </div>
     </div>
