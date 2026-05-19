@@ -38,7 +38,7 @@ const FIXTURE_CLINIC: ClinicBookingData = {
 
 export default function TestFixturePage() {
   return (
-    <div className="max-w-lg mx-auto py-8 px-4">
+    <div className="max-w-lg mx-auto py-8 px-4 pb-28">
       <BookingWizard clinic={FIXTURE_CLINIC} />
     </div>
   )
