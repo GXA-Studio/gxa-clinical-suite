@@ -1,6 +1,6 @@
 # PROJECT STATE — Medical Booking Boilerplate
 > **Single source of truth** for all future sessions.  
-> Last updated: **2026-05-20** — Smart Slot Forwarding (Dead-End Prevention) en flujo público y admin.
+> Last updated: **2026-05-20** — Smart Slot Forwarding + búsqueda global server-side de citas en admin.
 
 ---
 
@@ -103,6 +103,17 @@ La vista en `/admin/appointments` es mobile-first:
 - **≥ md**: tabla con columnas Paciente / Médico·Servicio / Fecha·Hora / Estado / Acciones.
 - **Stats strip**: 4 contadores (Total / Pendientes / Confirmadas / Canceladas).
 - **Filtros**: selector de estado + input de fecha, con botón "Limpiar filtros".
+
+### Búsqueda Global de Citas
+
+La tabla de citas en `/admin/appointments` dispone de un buscador server-side que filtra por nombre de paciente o teléfono.
+
+- **UI**: `<Input type="search">` con icono lupa (`Search` de lucide), ancho completo, encima de los filtros de estado/fecha existentes.
+- **Debounce**: 300 ms con `useRef` + `clearTimeout` — no se dispara una petición por cada tecla pulsada.
+- **URL state**: el término se persiste en `?q=` via `router.push()`, igual que `?status=` y `?date=`. El estado sobrevive a recargas y es compartible.
+- **Supabase query**: `AppointmentsSection` (Server Component) lee `q` de `searchParams` y aplica `.or('patient_name.ilike.%term%,patient_phone.ilike.%term%')` como cláusula `AND` adicional sobre el `clinic_id` ya filtrado. El término se sanitiza (trim + 100 chars + strip `,()`) antes de pasarlo al query builder de PostgREST.
+- **Stats**: los contadores Total / Confirmadas / Canceladas reflejan el subconjunto devuelto por la búsqueda.
+- **"Limpiar filtros"**: el botón también limpia el campo de búsqueda y el param `q`.
 
 ### Creación Manual de Citas (Staff → Paciente)
 
@@ -323,4 +334,7 @@ new Date().toISOString().slice(0, 10)
 | `33aecb9` | chore: final quality audit and typescript fixes |
 | `4c815e5` | perf: implement parallel fetching, redis caching, and db indexing |
 | `625198c` | feat: add 24h automated whatsapp reminders and admin manual booking UI |
-| `(HEAD)` | docs: update PROJECT_STATE.md with current MVP status and standby features |
+| `049ad85` | feat: dead-end prevention — "Buscar próximo hueco libre" en WeeklyGrid |
+| `4901321` | feat(admin): smart fast-forward for next available slot in admin dialog |
+| `7b2ea2a` | feat(admin): implement server-side global search for appointments |
+| `(HEAD)` | docs: update PROJECT_STATE.md and README.md |

@@ -180,5 +180,7 @@ All 8 tests cover: service selection → doctor (specific or "any specialist") �
 | Multi-tenant routing | `clinics.slug` drives `/[clinicSlug]` — no code changes between tenants |
 | Patient privacy | Patients never create accounts; all writes via `SECURITY DEFINER` RPCs |
 | Admin access | Row-Level Security; profiles link users to their clinic |
+| Admin search | Server-side full-text search on appointments by patient name or phone (`?q=`), debounced URL state, PostgREST `ilike` |
+| Smart Slot Forwarding | Zero-loop server action scans Supabase day-by-day to find next available slot; shared between patient flow and admin dialog |
 
 See [PROJECT_STATE.md](PROJECT_STATE.md) for full architectural decisions, schema documentation, RPC specs, and known invariants.
