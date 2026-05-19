@@ -5,6 +5,10 @@ import { fromZonedTime } from 'date-fns-tz'
 import { User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NewAppointmentDialog } from '@/components/admin/new-appointment-dialog'
+import {
+  EditAppointmentDialog,
+  type AppointmentForEdit,
+} from '@/components/admin/edit-appointment-dialog'
 
 // ─── Grid constants ────────────────────────────────────────────────────────────
 const GRID_START_HOUR   = 8
@@ -15,7 +19,7 @@ const TIME_COL_W        = 64
 const DOCTOR_COL_MIN_W  = 172
 const TOTAL_SLOTS       = (GRID_END_HOUR - GRID_START_HOUR) * (60 / SLOT_MINUTES) // 26
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// ─── Public Types ──────────────────────────────────────────────────────────────
 export interface GridDoctor {
   id: string
   name: string
@@ -27,17 +31,20 @@ export interface GridSchedule {
   id: string
   doctor_id: string
   day_of_week: number
-  start_time: string   // "HH:MM" in clinic local TZ
-  end_time: string     // "HH:MM" in clinic local TZ
+  start_time: string   // "HH:MM" clinic local TZ
+  end_time: string     // "HH:MM" clinic local TZ
   is_active: boolean
 }
 
 export interface GridAppointment {
   id: string
   doctor_id: string
+  service_id: string
+  cancellation_token: string
   patient_name: string
-  starts_at: string  // UTC ISO
-  ends_at: string    // UTC ISO
+  patient_phone: string
+  starts_at: string    // UTC ISO
+  ends_at: string      // UTC ISO
   status: string
   services: { name: string; duration_minutes: number } | null
 }
@@ -49,7 +56,7 @@ export interface GridService {
 }
 
 interface Props {
-  date: string       // YYYY-MM-DD (clinic local)
+  date: string       // YYYY-MM-DD clinic local
   timezone: string
   doctors: GridDoctor[]
   schedules: GridSchedule[]
@@ -58,36 +65,28 @@ interface Props {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Get local hour/minute from a UTC ISO string using Intl (no DST drift). */
 function getLocalHM(utcIso: string, tz: string): { h: number; m: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(new Date(utcIso))
-
   return {
     h: parseInt(parts.find(p => p.type === 'hour')!.value),
     m: parseInt(parts.find(p => p.type === 'minute')!.value),
   }
 }
 
-/** Convert a slot index + date (clinic local) to a UTC ISO string. */
 function slotIndexToUtcIso(date: string, slotIndex: number, tz: string): string {
   const totalMins = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
   const h  = Math.floor(totalMins / 60)
   const m  = totalMins % 60
-  const hh = String(h).padStart(2, '0')
-  const mm = String(m).padStart(2, '0')
-  // fromZonedTime treats the string as clinic-local and returns UTC
-  return fromZonedTime(`${date}T${hh}:${mm}:00`, tz).toISOString()
+  return fromZonedTime(
+    `${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`,
+    tz,
+  ).toISOString()
 }
 
-/** True if the slot (by 0-based index) falls within any active schedule block. */
 function isSlotWorking(slotIndex: number, blocks: GridSchedule[]): boolean {
-  const slotStart = slotIndex * SLOT_MINUTES  // minutes from GRID_START_HOUR
+  const slotStart = slotIndex * SLOT_MINUTES
   return blocks.some(b => {
     const [bh, bm] = b.start_time.split(':').map(Number)
     const [eh, em] = b.end_time.split(':').map(Number)
@@ -97,33 +96,24 @@ function isSlotWorking(slotIndex: number, blocks: GridSchedule[]): boolean {
   })
 }
 
-// Precomputed slot metadata (stable — no deps)
 const SLOTS = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
   const totalMins = GRID_START_HOUR * 60 + i * SLOT_MINUTES
   const h = Math.floor(totalMins / 60)
   const m = totalMins % 60
-  return {
-    h,
-    m,
-    isHour: m === 0,
-    label: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
-  }
+  return { h, m, isHour: m === 0, label: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}` }
 })
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function DailyResourceGrid({
-  date,
-  timezone,
-  doctors,
-  schedules,
-  appointments,
-  services,
+  date, timezone, doctors, schedules, appointments, services,
 }: Props) {
-  const [dialogPrefill, setDialogPrefill] = useState<null | {
-    doctorId: string
-    date: string
-    startsAt: string
+  // Dialog state — create new appointment (empty cell click)
+  const [createPrefill, setCreatePrefill] = useState<null | {
+    doctorId: string; date: string; startsAt: string
   }>(null)
+
+  // Dialog state — edit existing appointment (card click)
+  const [editTarget, setEditTarget] = useState<AppointmentForEdit | null>(null)
 
   // ── Derived maps ──────────────────────────────────────────────────────────────
   const schedulesByDoctor = useMemo(() => {
@@ -147,11 +137,25 @@ export function DailyResourceGrid({
   }, [appointments])
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
-  function handleCellClick(doctorId: string, slotIndex: number) {
-    setDialogPrefill({
+  function handleEmptyCellClick(doctorId: string, slotIndex: number) {
+    setCreatePrefill({
       doctorId,
       date,
       startsAt: slotIndexToUtcIso(date, slotIndex, timezone),
+    })
+  }
+
+  function handleAppointmentClick(appt: GridAppointment, e: React.MouseEvent) {
+    e.stopPropagation()  // prevent cell click from firing
+    setEditTarget({
+      id:                appt.id,
+      doctor_id:         appt.doctor_id,
+      service_id:        appt.service_id,
+      patient_name:      appt.patient_name,
+      patient_phone:     appt.patient_phone,
+      starts_at:         appt.starts_at,
+      ends_at:           appt.ends_at,
+      services:          appt.services,
     })
   }
 
@@ -164,31 +168,25 @@ export function DailyResourceGrid({
     )
   }
 
-  const totalGridHeight  = TOTAL_SLOTS * SLOT_HEIGHT_PX
-  const minGridWidth     = TIME_COL_W + doctors.length * DOCTOR_COL_MIN_W
+  const totalGridHeight = TOTAL_SLOTS * SLOT_HEIGHT_PX
+  const minGridWidth    = TIME_COL_W + doctors.length * DOCTOR_COL_MIN_W
 
   return (
     <>
-      {/*
-       * Single overflow:auto container — both axes.
-       * sticky top-0 and sticky left-0 work relative to this single scroll context.
-       */}
+      {/* ── Single scroll container ─────────────────────────────────────────── */}
       <div
         className="overflow-auto rounded-lg border border-slate-200 bg-white"
         style={{ maxHeight: 'calc(100svh - 11rem)' }}
       >
-        {/* Inner min-width wrapper so horizontal scroll kicks in when needed */}
         <div style={{ minWidth: `${minGridWidth}px` }}>
 
-          {/* ── Sticky header row ──────────────────────────────────────────── */}
+          {/* ── Sticky header row ────────────────────────────────────────────── */}
           <div className="sticky top-0 z-20 flex border-b border-slate-200 bg-white shadow-sm">
-            {/* Top-left corner — must be sticky in BOTH directions */}
+            {/* Top-left corner — sticky in both axes */}
             <div
               className="sticky left-0 z-30 shrink-0 border-r border-slate-200 bg-white"
               style={{ width: TIME_COL_W }}
             />
-
-            {/* Doctor header cells */}
             {doctors.map(doc => {
               const hasSchedule = (schedulesByDoctor.get(doc.id) ?? []).length > 0
               return (
@@ -216,9 +214,9 @@ export function DailyResourceGrid({
             })}
           </div>
 
-          {/* ── Grid body ──────────────────────────────────────────────────── */}
+          {/* ── Grid body ─────────────────────────────────────────────────────── */}
           <div className="flex">
-            {/* Sticky time-label column */}
+            {/* Sticky time column */}
             <div
               className="sticky left-0 z-10 shrink-0 border-r border-slate-200 bg-slate-50"
               style={{ width: TIME_COL_W, height: totalGridHeight }}
@@ -233,9 +231,7 @@ export function DailyResourceGrid({
                   style={{ height: SLOT_HEIGHT_PX }}
                 >
                   {slot.isHour ? (
-                    <span className="text-[11px] font-medium tabular-nums text-slate-500">
-                      {slot.label}
-                    </span>
+                    <span className="text-[11px] font-medium tabular-nums text-slate-500">{slot.label}</span>
                   ) : (
                     <span className="text-[10px] text-slate-300">·</span>
                   )}
@@ -252,13 +248,9 @@ export function DailyResourceGrid({
                 <div
                   key={doc.id}
                   className="relative border-r border-slate-200 last:border-r-0"
-                  style={{
-                    minWidth: DOCTOR_COL_MIN_W,
-                    flex: 1,
-                    height: totalGridHeight,
-                  }}
+                  style={{ minWidth: DOCTOR_COL_MIN_W, flex: 1, height: totalGridHeight }}
                 >
-                  {/* ── Background / click cells ─────────────────────────── */}
+                  {/* Background / click cells */}
                   {SLOTS.map((slot, i) => {
                     const working = isSlotWorking(i, docSchedules)
                     return (
@@ -274,46 +266,57 @@ export function DailyResourceGrid({
                         style={{
                           top: i * SLOT_HEIGHT_PX,
                           height: SLOT_HEIGHT_PX,
-                          // Hatched pattern for non-working hours
                           ...(!working && {
                             backgroundColor: 'rgb(241 245 249)',
                             backgroundImage:
                               'repeating-linear-gradient(45deg,transparent,transparent 6px,rgba(148,163,184,0.15) 6px,rgba(148,163,184,0.15) 12px)',
                           }),
                         }}
-                        onClick={() => working && handleCellClick(doc.id, i)}
+                        onClick={() => working && handleEmptyCellClick(doc.id, i)}
                       />
                     )
                   })}
 
-                  {/* ── Appointment cards ─────────────────────────────────── */}
+                  {/* Appointment cards */}
                   {docAppts.map(appt => {
                     const { h: sh, m: sm } = getLocalHM(appt.starts_at, timezone)
                     const { h: eh, m: em } = getLocalHM(appt.ends_at,   timezone)
-
-                    const startMinsFromGrid = (sh - GRID_START_HOUR) * 60 + sm
-                    const durationMins      = (eh - GRID_START_HOUR) * 60 + em - startMinsFromGrid
-                    const topPx             = (startMinsFromGrid / SLOT_MINUTES) * SLOT_HEIGHT_PX
-                    const heightPx          = Math.max(
-                      SLOT_HEIGHT_PX * 0.85,
-                      (durationMins / SLOT_MINUTES) * SLOT_HEIGHT_PX - 4
-                    )
-                    const serviceName = appt.services?.name ?? ''
+                    const startMins = (sh - GRID_START_HOUR) * 60 + sm
+                    const durMins   = (eh - GRID_START_HOUR) * 60 + em - startMins
+                    const topPx     = (startMins / SLOT_MINUTES) * SLOT_HEIGHT_PX
+                    const heightPx  = Math.max(SLOT_HEIGHT_PX * 0.85, (durMins / SLOT_MINUTES) * SLOT_HEIGHT_PX - 4)
+                    const isPast    = new Date(appt.starts_at) < new Date()
 
                     return (
-                      <div
+                      <button
                         key={appt.id}
-                        className="absolute left-1 right-1 z-10 overflow-hidden rounded-md border border-blue-200 bg-blue-50 px-2 py-1 shadow-sm"
+                        type="button"
+                        onClick={e => handleAppointmentClick(appt, e)}
+                        className={cn(
+                          'absolute left-1 right-1 z-10 overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm',
+                          'transition-all hover:shadow-md hover:ring-1',
+                          isPast
+                            ? 'border-slate-200 bg-slate-50 hover:ring-slate-300'
+                            : 'border-blue-200 bg-blue-50 hover:ring-blue-300'
+                        )}
                         style={{ top: topPx + 2, height: heightPx }}
-                        title={`${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')} · ${appt.patient_name}${serviceName ? ` · ${serviceName}` : ''}`}
+                        title={`${appt.patient_name} — clic para editar`}
                       >
-                        <p className="truncate text-[11px] font-semibold leading-tight text-blue-800">
+                        <p className={cn(
+                          'truncate text-[11px] font-semibold leading-tight',
+                          isPast ? 'text-slate-500' : 'text-blue-800'
+                        )}>
                           {String(sh).padStart(2,'0')}:{String(sm).padStart(2,'0')} · {appt.patient_name}
                         </p>
-                        {heightPx > 36 && serviceName && (
-                          <p className="truncate text-[10px] leading-tight text-blue-500">{serviceName}</p>
+                        {heightPx > 36 && appt.services?.name && (
+                          <p className={cn(
+                            'truncate text-[10px] leading-tight',
+                            isPast ? 'text-slate-400' : 'text-blue-500'
+                          )}>
+                            {appt.services.name}
+                          </p>
                         )}
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -323,14 +326,26 @@ export function DailyResourceGrid({
         </div>
       </div>
 
-      {/* Controlled dialog opened from grid cell clicks */}
-      {dialogPrefill && (
+      {/* ── Create dialog (empty cell) ──────────────────────────────────────── */}
+      {createPrefill && (
         <NewAppointmentDialog
           doctors={doctors as Parameters<typeof NewAppointmentDialog>[0]['doctors']}
           services={services}
           open={true}
-          onOpenChange={open => { if (!open) setDialogPrefill(null) }}
-          prefill={dialogPrefill}
+          onOpenChange={open => { if (!open) setCreatePrefill(null) }}
+          prefill={createPrefill}
+        />
+      )}
+
+      {/* ── Edit dialog (appointment card) ─────────────────────────────────── */}
+      {editTarget && (
+        <EditAppointmentDialog
+          appointment={editTarget}
+          doctors={doctors}
+          services={services}
+          timezone={timezone}
+          open={true}
+          onOpenChange={open => { if (!open) setEditTarget(null) }}
         />
       )}
     </>
