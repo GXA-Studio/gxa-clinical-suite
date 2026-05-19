@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import { Plus, Loader2, CalendarDays, User, Phone, Stethoscope, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,9 +29,20 @@ interface Service {
   duration_minutes: number
 }
 
+interface Prefill {
+  doctorId?: string
+  date?: string
+  /** UTC ISO — nearest available slot is auto-selected when slots load */
+  startsAt?: string
+}
+
 interface Props {
   doctors: Doctor[]
   services: Service[]
+  /** If provided, dialog is controlled externally (no trigger button rendered). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  prefill?: Prefill
 }
 
 function formatTimeLabel(isoUtc: string, timezone: string) {
@@ -43,60 +54,92 @@ function formatTimeLabel(isoUtc: string, timezone: string) {
 }
 
 function todayLocalDate() {
-  // en-CA locale formats as YYYY-MM-DD using the browser's local timezone
   return new Intl.DateTimeFormat('en-CA').format(new Date())
 }
 
-export function NewAppointmentDialog({ doctors, services }: Props) {
-  const [open, setOpen] = useState(false)
-  const [pending, start] = useTransition()
+export function NewAppointmentDialog({
+  doctors,
+  services,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  prefill,
+}: Props) {
+  const [selfOpen, setSelfOpen] = useState(false)
+  const [pending, start]        = useTransition()
+  const isControlled            = controlledOpen !== undefined
 
   const [patientName,  setPatientName]  = useState('')
   const [patientPhone, setPatientPhone] = useState('')
-  const [doctorId,  setDoctorId]  = useState('')
-  const [serviceId, setServiceId] = useState('')
-  const [date,      setDate]      = useState(todayLocalDate())
-  const [slotStart, setSlotStart] = useState('')
+  const [doctorId,     setDoctorId]     = useState('')
+  const [serviceId,    setServiceId]    = useState('')
+  const [date,         setDate]         = useState(todayLocalDate())
+  const [slotStart,    setSlotStart]    = useState('')
 
   const [slots,        setSlots]        = useState<string[]>([])
   const [loadingSlots, setLoadingSlots] = useState(false)
 
-  const doctorServices = doctors.find((d) => d.id === doctorId)?.doctor_services ?? []
-  const serviceIds     = new Set(doctorServices.map((ds) => ds.service_id))
-  const filteredServices = doctorId
-    ? services.filter((s) => serviceIds.has(s.id))
-    : services
+  const dialogOpen = isControlled ? (controlledOpen ?? false) : selfOpen
 
-  const selectedService = services.find((s) => s.id === serviceId)
-  const selectedDoctor  = doctors.find((d) => d.id === doctorId)
+  // ── Derived values ────────────────────────────────────────────────────────────
+  const doctorServices   = doctors.find((d) => d.id === doctorId)?.doctor_services ?? []
+  const serviceIds       = new Set(doctorServices.map((ds) => ds.service_id))
+  const filteredServices = doctorId ? services.filter((s) => serviceIds.has(s.id)) : services
+  const selectedService  = services.find((s) => s.id === serviceId)
+  const selectedDoctor   = doctors.find((d) => d.id === doctorId)
+  const timezone         = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const canFetchSlots    = !!(doctorId && serviceId && date)
 
-  // Reset service and slot when doctor changes
+  // ── Apply prefill when controlled dialog opens ────────────────────────────────
+  const prevOpen = useRef(false)
+  useEffect(() => {
+    if (!isControlled) return
+    const justOpened = controlledOpen && !prevOpen.current
+    prevOpen.current = controlledOpen ?? false
+    if (!justOpened || !prefill) return
+    if (prefill.doctorId) setDoctorId(prefill.doctorId)
+    if (prefill.date)     setDate(prefill.date)
+    // slotStart is applied after slots load (see below)
+  }, [controlledOpen, isControlled, prefill])
+
+  // ── Auto-select nearest available slot when prefill.startsAt is set ───────────
+  useEffect(() => {
+    if (!prefill?.startsAt || slots.length === 0 || slotStart) return
+    const target = new Date(prefill.startsAt).getTime()
+    const nearest = slots.reduce((best, s) =>
+      Math.abs(new Date(s).getTime() - target) < Math.abs(new Date(best).getTime() - target)
+        ? s
+        : best
+    )
+    setSlotStart(nearest)
+  // We intentionally only re-run when `slots` changes (after each fetch).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots])
+
+  // ── Reset service + slot when doctor changes ──────────────────────────────────
   useEffect(() => {
     setServiceId('')
     setSlotStart('')
     setSlots([])
   }, [doctorId])
 
-  // Reset slot when service or date changes
+  // ── Reset slot when service or date changes ───────────────────────────────────
   useEffect(() => {
     setSlotStart('')
     setSlots([])
   }, [serviceId, date])
 
-  // Fetch available slots when doctor + service + date are all set
+  // ── Fetch available slots ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!doctorId || !serviceId || !date) return
-
+    if (!canFetchSlots) return
     setLoadingSlots(true)
     fetch(`/api/slots?doctorId=${doctorId}&serviceId=${serviceId}&date=${date}`)
-      .then((r) => r.json())
-      .then((body) => {
-        setSlots(body.slots ?? [])
-      })
+      .then(r => r.json())
+      .then(body => setSlots(body.slots ?? []))
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false))
-  }, [doctorId, serviceId, date])
+  }, [doctorId, serviceId, date, canFetchSlots])
 
+  // ── Form helpers ──────────────────────────────────────────────────────────────
   function resetForm() {
     setPatientName('')
     setPatientPhone('')
@@ -105,16 +148,26 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
     setDate(todayLocalDate())
     setSlotStart('')
     setSlots([])
+    prevOpen.current = false
   }
 
   function handleOpenChange(value: boolean) {
-    setOpen(value)
-    if (!value) resetForm()
+    if (isControlled) {
+      if (!value) resetForm()
+      controlledOnOpenChange?.(value)
+    } else {
+      setSelfOpen(value)
+      if (!value) resetForm()
+    }
   }
 
   function handleSubmit() {
     if (!patientName.trim() || !patientPhone || !doctorId || !serviceId || !slotStart) {
-      toast({ variant: 'destructive', title: 'Campos incompletos', description: 'Rellena todos los campos antes de continuar.' })
+      toast({
+        variant: 'destructive',
+        title: 'Campos incompletos',
+        description: 'Rellena todos los campos antes de continuar.',
+      })
       return
     }
 
@@ -132,23 +185,26 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
         return
       }
 
-      toast({ variant: 'success', title: 'Cita creada', description: 'El paciente recibirá un WhatsApp de confirmación.' })
-      setOpen(false)
-      resetForm()
+      toast({
+        variant: 'success',
+        title: 'Cita creada',
+        description: 'El paciente recibirá un WhatsApp de confirmación.',
+      })
+      handleOpenChange(false)
     })
   }
 
-  const canFetchSlots  = !!(doctorId && serviceId && date)
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button size="sm" className="gap-1.5">
-          <Plus className="h-4 w-4" />
-          Nueva cita
-        </Button>
-      </DialogTrigger>
+    <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
+      {/* Trigger button only rendered in standalone (uncontrolled) mode */}
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button size="sm" className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Nueva cita
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -166,7 +222,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
                 id="na-name"
                 placeholder="Ana García López"
                 value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
+                onChange={e => setPatientName(e.target.value)}
                 disabled={pending}
               />
             </div>
@@ -178,7 +234,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
                 id="na-phone"
                 placeholder="+34612345678"
                 value={patientPhone}
-                onChange={(e) => setPatientPhone(e.target.value)}
+                onChange={e => setPatientPhone(e.target.value)}
                 disabled={pending}
               />
             </div>
@@ -195,7 +251,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
                   <SelectValue placeholder="Selecciona médico" />
                 </SelectTrigger>
                 <SelectContent>
-                  {doctors.map((d) => (
+                  {doctors.map(d => (
                     <SelectItem key={d.id} value={d.id}>
                       {d.name}{d.specialty ? ` · ${d.specialty}` : ''}
                     </SelectItem>
@@ -210,7 +266,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
                   <SelectValue placeholder={doctorId ? 'Selecciona servicio' : 'Elige médico primero'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredServices.map((s) => (
+                  {filteredServices.map(s => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.name} · {s.duration_minutes} min
                     </SelectItem>
@@ -230,7 +286,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
               type="date"
               value={date}
               min={todayLocalDate()}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={e => setDate(e.target.value)}
               disabled={pending}
             />
           </div>
@@ -251,7 +307,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {slots.map((iso) => (
+                  {slots.map(iso => (
                     <button
                       key={iso}
                       type="button"
@@ -285,7 +341,7 @@ export function NewAppointmentDialog({ doctors, services }: Props) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={pending}>
             Cancelar
           </Button>
           <Button

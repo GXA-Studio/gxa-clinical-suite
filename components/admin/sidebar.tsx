@@ -6,10 +6,11 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   CalendarDays, UserRound, Layers, Clock,
-  LogOut, Stethoscope, ChevronRight,
+  LogOut, Stethoscope, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 
 const navItems = [
+  { href: '/admin/agenda',       label: 'Agenda',    icon: LayoutGrid },
   { href: '/admin/appointments', label: 'Citas',     icon: CalendarDays },
   { href: '/admin/services',     label: 'Servicios', icon: Layers },
   { href: '/admin/doctors',      label: 'Médicos',   icon: UserRound },
