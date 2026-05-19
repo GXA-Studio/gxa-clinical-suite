@@ -1,6 +1,6 @@
 # Medical Booking Boilerplate
 
-White-label patient booking system. Zero-friction instant booking, GDPR-compliant, race-condition-proof.
+White-label patient booking system. Zero-friction instant booking, GDPR-compliant, race-condition-proof, with Smart Slot Forwarding for patients and reception staff.
 
 **Stack:** Next.js 15 (App Router) · Supabase (PostgreSQL + Auth + RLS) · Twilio WhatsApp · Upstash Redis · shadcn/ui · Vercel
 

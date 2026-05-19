@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition, useEffect, useRef } from 'react'
-import { Plus, Loader2, CalendarDays, User, Phone, Stethoscope, Clock } from 'lucide-react'
+import { Plus, Loader2, CalendarDays, User, Phone, Stethoscope, Clock, CalendarX, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
 import { bookAppointmentManual } from '@/app/(admin)/admin/appointments/actions'
+import { findNextAvailableDate } from '@/app/(booking)/[clinicSlug]/actions'
 
 interface Doctor {
   id: string
@@ -78,6 +79,9 @@ export function NewAppointmentDialog({
   const [slots,        setSlots]        = useState<string[]>([])
   const [loadingSlots, setLoadingSlots] = useState(false)
 
+  const [searchingNext,   startNextTransition] = useTransition()
+  const [noNextAvailable, setNoNextAvailable]  = useState(false)
+
   const dialogOpen = isControlled ? (controlledOpen ?? false) : selfOpen
 
   // ── Derived values ────────────────────────────────────────────────────────────
@@ -120,12 +124,14 @@ export function NewAppointmentDialog({
     setServiceId('')
     setSlotStart('')
     setSlots([])
+    setNoNextAvailable(false)
   }, [doctorId])
 
   // ── Reset slot when service or date changes ───────────────────────────────────
   useEffect(() => {
     setSlotStart('')
     setSlots([])
+    setNoNextAvailable(false)
   }, [serviceId, date])
 
   // ── Fetch available slots ─────────────────────────────────────────────────────
@@ -159,6 +165,23 @@ export function NewAppointmentDialog({
       setSelfOpen(value)
       if (!value) resetForm()
     }
+  }
+
+  function handleFindNext() {
+    setNoNextAvailable(false)
+    // Start the scan from the day immediately after the currently selected date
+    const base = new Date(date + 'T00:00:00Z')
+    base.setUTCDate(base.getUTCDate() + 1)
+    const startDate = base.toISOString().slice(0, 10)
+
+    startNextTransition(async () => {
+      const found = await findNextAvailableDate(serviceId, doctorId || null, startDate)
+      if (found) {
+        setDate(found)   // triggers slot-reset + re-fetch via existing useEffects
+      } else {
+        setNoNextAvailable(true)
+      }
+    })
   }
 
   function handleSubmit() {
@@ -302,9 +325,38 @@ export function NewAppointmentDialog({
                   <Loader2 className="h-4 w-4 animate-spin" /> Cargando horarios…
                 </div>
               ) : slots.length === 0 ? (
-                <p className="py-2 text-sm text-muted-foreground">
-                  No hay horarios disponibles para esta fecha.
-                </p>
+                <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-slate-200 py-5 text-center">
+                  <CalendarX className="h-8 w-8 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">
+                    Sin disponibilidad este día
+                  </p>
+                  {noNextAvailable ? (
+                    <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
+                      No encontramos disponibilidad en los próximos 45 días
+                    </p>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={searchingNext}
+                      onClick={handleFindNext}
+                      className="gap-2"
+                    >
+                      {searchingNext ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Buscando…
+                        </>
+                      ) : (
+                        <>
+                          <Search className="h-3.5 w-3.5" />
+                          Buscar próximo hueco libre
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {slots.map(iso => (

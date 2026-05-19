@@ -1,6 +1,6 @@
 # PROJECT STATE — Medical Booking Boilerplate
 > **Single source of truth** for all future sessions.  
-> Last updated: **2026-05-16** — Auditoría DST completada (SAFE). Parche paginación semanal. Sec + Cruft audit.
+> Last updated: **2026-05-20** — Smart Slot Forwarding (Dead-End Prevention) en flujo público y admin.
 
 ---
 
@@ -126,6 +126,8 @@ El staff puede crear citas telefónicamente desde `/admin/appointments` sin que 
 - Hace `revalidatePath('/admin/appointments')` para refrescar la tabla.
 
 **Regla de oro**: cualquier cita creada por el admin es indistinguible de una creada por el paciente. El paciente recibe el mismo WhatsApp de confirmación y tiene el mismo portal `/manage/[token]` para gestionar su cita.
+
+**Smart Forwarding (Dead-End Prevention)**: cuando el día seleccionado no tiene ningún hueco disponible, el diálogo muestra un empty state con el botón "Buscar próximo hueco libre". Al pulsarlo, se ejecuta la Server Action `findNextAvailableDate` (`app/(booking)/[clinicSlug]/actions.ts`) que escanea día a día en Supabase (sin pasar por `/api/slots` ni tocar el rate-limiter de Redis) hasta encontrar el primer día con disponibilidad (límite 45 días). Si hay médico seleccionado, busca sólo sus huecos (`get_available_slots`); si no hay médico (modo "cualquier profesional"), evalúa toda la clínica (`get_slots_for_service`). Al encontrar la fecha, `setDate(found)` actualiza el input de fecha, los efectos existentes limpian y re-fetean los slots automáticamente. Si no hay disponibilidad en 45 días se muestra un mensaje de fallback. La misma Server Action se reutiliza desde el flujo público de pacientes (`WeeklyGrid`).
 
 ---
 
