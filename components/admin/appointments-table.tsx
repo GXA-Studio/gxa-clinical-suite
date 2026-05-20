@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/hooks/use-toast'
-import { XCircle, Loader2, CalendarDays, Phone, User, Stethoscope, Search } from 'lucide-react'
+import { XCircle, Loader2, CalendarDays, Phone, User, Stethoscope, Search, ArrowUpDown } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,6 +71,7 @@ export function AppointmentsTable({
   const statusFilter = searchParams.get('status') ?? 'all'
   const dateFilter   = searchParams.get('date') ?? ''
   const searchQuery  = searchParams.get('q') ?? ''
+  const sortFilter   = searchParams.get('sort') ?? 'date_asc'
 
   const [inputValue,  setInputValue]  = useState(searchQuery)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -161,7 +162,20 @@ export function AppointmentsTable({
           value={dateFilter}
           onChange={(e) => updateFilter('date', e.target.value)}
         />
-        {(statusFilter !== 'all' || dateFilter || inputValue) && (
+        <Select value={sortFilter} onValueChange={(v) => updateFilter('sort', v)}>
+          <SelectTrigger className="w-52 gap-1.5">
+            <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <SelectValue placeholder="Ordenar por..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="date_asc">Próximas primero</SelectItem>
+            <SelectItem value="date_desc">Más lejanas primero</SelectItem>
+            <SelectItem value="patient_asc">Paciente A→Z</SelectItem>
+            <SelectItem value="patient_desc">Paciente Z→A</SelectItem>
+            <SelectItem value="created_desc">Últimas reservas</SelectItem>
+          </SelectContent>
+        </Select>
+        {(statusFilter !== 'all' || dateFilter || inputValue || sortFilter !== 'date_asc') && (
           <Button
             variant="ghost"
             size="sm"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { fromZonedTime } from 'date-fns-tz'
 import { User } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -156,6 +156,13 @@ export function DailyResourceGrid({
   // Dialog state — edit existing appointment (card click)
   const [editTarget, setEditTarget] = useState<AppointmentForEdit | null>(null)
 
+  // Current time — ticks every minute so the time line advances automatically
+  const [currentTime, setCurrentTime] = useState(new Date())
+  useEffect(() => {
+    const id = setInterval(() => setCurrentTime(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   // ── Derived maps ──────────────────────────────────────────────────────────────
   const schedulesByDoctor = useMemo(() => {
     const map = new Map<string, GridSchedule[]>()
@@ -231,6 +238,13 @@ export function DailyResourceGrid({
   const totalGridHeight = TOTAL_SLOTS * SLOT_HEIGHT_PX
   const minGridWidth    = TIME_COL_W + doctors.length * DOCTOR_COL_MIN_W
 
+  // Current-time line — only drawn when viewing today in the clinic's timezone
+  const todayStr    = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(currentTime)
+  const isToday     = date === todayStr
+  const { h: nowH, m: nowM } = getLocalHM(currentTime.toISOString(), timezone)
+  const nowTopPx    = ((nowH - GRID_START_HOUR) * 60 + nowM) / SLOT_MINUTES * SLOT_HEIGHT_PX
+  const showTimeLine = isToday && nowTopPx >= 0 && nowTopPx <= totalGridHeight
+
   return (
     <>
       {/* ── Single scroll container ─────────────────────────────────────────── */}
@@ -297,6 +311,15 @@ export function DailyResourceGrid({
                   )}
                 </div>
               ))}
+              {/* Dot anchored to the time column's right edge */}
+              {showTimeLine && (
+                <div
+                  className="pointer-events-none absolute right-0 z-20 -translate-y-1/2 translate-x-1/2"
+                  style={{ top: nowTopPx }}
+                >
+                  <div className="h-3 w-3 rounded-full bg-red-500 shadow-sm ring-2 ring-white" />
+                </div>
+              )}
             </div>
 
             {/* Doctor columns */}
@@ -392,6 +415,14 @@ export function DailyResourceGrid({
                       </div>
                     )
                   })}
+
+                  {/* Current time line — one horizontal rule per column */}
+                  {showTimeLine && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 z-20 h-px bg-red-500"
+                      style={{ top: nowTopPx }}
+                    />
+                  )}
 
                   {/* Appointment cards */}
                   {docAppts.map(appt => {

@@ -59,20 +59,31 @@ function AppointmentsTableSkeleton() {
 
 // ─── Async data component (inside Suspense) ───────────────────────────────────
 // This is the only thing that blocks on the slow appointments query.
+const SORT_MAP: Record<string, { col: string; asc: boolean }> = {
+  date_asc:     { col: 'starts_at',    asc: true  },
+  date_desc:    { col: 'starts_at',    asc: false },
+  patient_asc:  { col: 'patient_name', asc: true  },
+  patient_desc: { col: 'patient_name', asc: false },
+  created_desc: { col: 'created_at',   asc: false },
+}
+
 async function AppointmentsSection({
   clinicId,
   timezone,
   status,
   date,
   q,
+  sort,
 }: {
   clinicId: string
   timezone: string
   status?: string
   date?: string
   q?: string
+  sort?: string
 }) {
   const supabase = await createClient()
+  const { col: sortCol, asc: sortAsc } = SORT_MAP[sort ?? 'date_asc'] ?? SORT_MAP.date_asc
 
   let query = supabase
     .from('appointments')
@@ -82,7 +93,7 @@ async function AppointmentsSection({
       services(id, name, duration_minutes)
     `)
     .eq('clinic_id', clinicId)
-    .order('starts_at', { ascending: false })
+    .order(sortCol, { ascending: sortAsc })
     .limit(200)
 
   if (status && status !== 'all') {
@@ -133,9 +144,9 @@ async function DialogLoader({ clinicId }: { clinicId: string }) {
 export default async function AppointmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; date?: string; q?: string }>
+  searchParams: Promise<{ status?: string; date?: string; q?: string; sort?: string }>
 }) {
-  const { status, date, q } = await searchParams
+  const { status, date, q, sort } = await searchParams
   const { clinicId, timezone } = await getAdminProfile()
 
   return (
@@ -167,6 +178,7 @@ export default async function AppointmentsPage({
           status={status}
           date={date}
           q={q}
+          sort={sort}
         />
       </Suspense>
     </div>
