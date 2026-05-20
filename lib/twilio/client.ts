@@ -90,11 +90,9 @@ export async function sendWhatsAppConfirmation({
     `Nota legal (AEPD): Tratamos tus datos según el RGPD. Responde INFO para más detalles.`
 
   const payload = { to: toWa, from: WHATSAPP_FROM, body: msgBody }
-  console.log('[Twilio WA] sendWhatsAppConfirmation → payload:', JSON.stringify(payload))
 
   try {
-    const msg = await getClient().messages.create(payload)
-    console.log('[Twilio WA] Message queued → SID:', msg.sid, '| Status:', msg.status, '| ErrorCode:', msg.errorCode)
+    await getClient().messages.create(payload)
   } catch (err: unknown) {
     const e = err as { status?: number; code?: number; message?: string; moreInfo?: string }
     console.error('[Twilio WA] API error →', JSON.stringify({

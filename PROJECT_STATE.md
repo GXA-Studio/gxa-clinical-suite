@@ -218,11 +218,15 @@ SUPABASE_PROJECT_ID=              # Solo para npm run db:types
 # Twilio
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=              # E.164, e.g. +15005550006 (SMS/OTP flow)
 TWILIO_WHATSAPP_FROM=             # WhatsApp sender (sandbox: whatsapp:+14155238886)
 
 # App
 NEXT_PUBLIC_APP_URL=              # e.g. https://medical-booking-boilerplate.vercel.app
-INTERNAL_API_SECRET=              # 32-byte hex random
+NEXT_PUBLIC_DEFAULT_TIMEZONE=     # Optional IANA fallback, e.g. Europe/Madrid
+
+# OTP Security
+OTP_HASH_PEPPER=                  # 32-byte hex random (openssl rand -hex 32)
 
 # Redis (Upstash)
 UPSTASH_REDIS_REST_URL=

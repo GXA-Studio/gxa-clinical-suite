@@ -77,7 +77,6 @@ export function getBaseUrl(): string {
       console.warn('[getBaseUrl] NEXT_PUBLIC_APP_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
       return PROD_FALLBACK
     }
-    console.log('[getBaseUrl] source=NEXT_PUBLIC_APP_URL →', url)
     return url
   }
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
@@ -86,7 +85,6 @@ export function getBaseUrl(): string {
       console.warn('[getBaseUrl] VERCEL_PROJECT_PRODUCTION_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
       return PROD_FALLBACK
     }
-    console.log('[getBaseUrl] source=VERCEL_PROJECT_PRODUCTION_URL →', url)
     return url
   }
   if (process.env.VERCEL_URL) {
@@ -95,7 +93,6 @@ export function getBaseUrl(): string {
       console.warn('[getBaseUrl] VERCEL_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
       return PROD_FALLBACK
     }
-    console.log('[getBaseUrl] source=VERCEL_URL →', url)
     return url
   }
   if (onVercel) {

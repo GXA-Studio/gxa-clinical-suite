@@ -42,12 +42,9 @@ export async function POST(req: NextRequest) {
   const status     = params['MessageStatus'] ?? 'unknown'
   const to         = params['To']            ?? 'unknown'
 
-  // Log delivery status for observability — extend to store in DB if needed
   console.info(`[webhooks/twilio] ${messageSid} → ${status} (to: ${to})`)
 
   if (status === 'failed' || status === 'undelivered') {
-    // TODO (Step 4): optionally mark the appointment's SMS status in the DB
-    // and surface it in the admin dashboard
     console.warn(`[webhooks/twilio] Delivery failure for ${messageSid} to ${to}`)
   }
 

@@ -191,17 +191,6 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
       .then((r) => r.json())
       .then(({ dates: d, slots: s }) => {
         if (cancelled) return
-        console.log('[BookingSearch] API /slots/week →', {
-          url:          `/api/slots/week?${params}`,
-          datesCount:   (d ?? []).length,
-          doctorIds:    Object.keys(s ?? {}),
-          slotsPerDoc:  Object.fromEntries(
-            Object.entries(s ?? {}).map(([id, byDate]) => [
-              id,
-              Object.values(byDate as Record<string, unknown[]>).reduce((n, arr) => n + arr.length, 0),
-            ])
-          ),
-        })
         setDates(d ?? [])
         setWeekSlots(s ?? {})
       })
@@ -293,7 +282,6 @@ export function BookingSearch({ clinic }: { clinic: ClinicBookingData }) {
       result[date] = [...set].sort()
     }
 
-    console.log('Aggregated Slots:', result)
     return result
   }, [weekSlots, doctorsToDisplay, filters.doctorId, filters.insuranceId])
 

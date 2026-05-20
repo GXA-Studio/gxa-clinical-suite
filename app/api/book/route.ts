@@ -110,8 +110,6 @@ export async function POST(req: NextRequest) {
 
   const baseUrl = getBaseUrl()
 
-  console.log('[POST /api/book] Twilio payload → to: whatsapp:' + patientPhone + ' | baseUrl:', baseUrl)
-
   try {
     await sendWhatsAppConfirmation({
       to:                patientPhone,
