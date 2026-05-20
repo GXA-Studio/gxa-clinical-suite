@@ -9,6 +9,17 @@ const config: Config = {
     './app/**/*.{ts,tsx}',
     './lib/**/*.{ts,tsx}',
   ],
+  // Explicit safelist for color classes that only reach the bundle through
+  // the lib/constants/colors.ts dictionary. Tailwind has occasionally failed
+  // to detect them via the content scanner (see commit 4e84b20), so we lock
+  // them in defensively. Any new appointment color MUST be added here too.
+  safelist: [
+    'bg-blue-50', 'bg-blue-500', 'border-blue-200', 'text-blue-500', 'text-blue-800', 'hover:ring-blue-300',
+    'bg-emerald-50', 'bg-emerald-500', 'border-emerald-200', 'text-emerald-500', 'text-emerald-800', 'hover:ring-emerald-300',
+    'bg-purple-50', 'bg-purple-500', 'border-purple-200', 'text-purple-500', 'text-purple-800', 'hover:ring-purple-300',
+    'bg-amber-50', 'bg-amber-500', 'border-amber-200', 'text-amber-500', 'text-amber-800', 'hover:ring-amber-300',
+    'bg-rose-50', 'bg-rose-500', 'border-rose-200', 'text-rose-500', 'text-rose-800', 'hover:ring-rose-300',
+  ],
   theme: {
     container: {
       center: true,

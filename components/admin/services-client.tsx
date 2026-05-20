@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useOptimistic } from 'react'
 import type { Service } from '@/lib/supabase/types'
 import { createService, updateService, toggleService } from '@/app/(admin)/admin/services/actions'
 import { Button } from '@/components/ui/button'
@@ -7,27 +7,46 @@ import { Input }  from '@/components/ui/input'
 import { Label }  from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch }   from '@/components/ui/switch'
-import { Badge }    from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
-  APPOINTMENT_COLOR_KEYS, COLOR_LABELS, COLOR_SWATCHES,
+  APPOINTMENT_COLOR_KEYS, COLOR_LABELS, COLOR_HEX,
   type AppointmentColor,
 } from '@/lib/constants/colors'
 import { Plus, Pencil, Clock, DollarSign, Loader2 } from 'lucide-react'
 
 type FormMode = 'create' | 'edit'
 
+// Optimistic actions applied to the services list on top of the server-side
+// `initial` prop. The reducer is a pure function — keeps the optimistic state
+// reproducible and lets useOptimistic discard the patch once revalidatePath
+// finishes and a fresh `initial` arrives.
+type OptimisticAction =
+  | { type: 'patch'; service: Service }
+  | { type: 'toggle'; id: string; isActive: boolean }
+
+function applyOptimistic(state: Service[], action: OptimisticAction): Service[] {
+  switch (action.type) {
+    case 'patch':
+      return state.map((s) => (s.id === action.service.id ? { ...s, ...action.service } : s))
+    case 'toggle':
+      return state.map((s) => (s.id === action.id ? { ...s, is_active: action.isActive } : s))
+  }
+}
+
 export function ServicesClient({ services: initial }: { services: Service[] }) {
-  const [services,     setServices]     = useState(initial)
-  const [open,         setOpen]         = useState(false)
-  const [mode,         setMode]         = useState<FormMode>('create')
-  const [selected,     setSelected]     = useState<Service | null>(null)
-  const [formColor,    setFormColor]    = useState<AppointmentColor>('blue')
-  const [pending,      startTransition] = useTransition()
+  const [open,        setOpen]        = useState(false)
+  const [mode,        setMode]        = useState<FormMode>('create')
+  const [selected,    setSelected]    = useState<Service | null>(null)
+  const [formColor,   setFormColor]   = useState<AppointmentColor>('blue')
+  const [pending,     startTransition] = useTransition()
+
+  // Source of truth: server-component `initial`. revalidatePath('/admin/services')
+  // re-flows fresh data into this prop; useOptimistic layers in-flight edits.
+  const [services, dispatchOptimistic] = useOptimistic(initial, applyOptimistic)
 
   function openCreate() {
     setMode('create')
@@ -48,24 +67,50 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
     const fd = new FormData(e.currentTarget)
 
     startTransition(async () => {
+      // Optimistic patch for the edit case — applies the new color (and other
+      // fields) to the row immediately so the user sees the change before the
+      // server round-trip finishes. For 'create' we wait for revalidation since
+      // we don't have an ID yet.
+      if (mode === 'edit' && selected) {
+        dispatchOptimistic({
+          type:    'patch',
+          service: {
+            ...selected,
+            name:             String(fd.get('name') ?? selected.name),
+            duration_minutes: Number(fd.get('duration_minutes') ?? selected.duration_minutes),
+            price:            fd.get('price') ? Number(fd.get('price')) : selected.price,
+            description:      (fd.get('description') as string) || null,
+            color:            formColor,
+          },
+        })
+      }
+
       const result = mode === 'create'
         ? await createService(fd)
         : await updateService(selected!.id, fd)
 
       if (result.error) {
-        toast({ variant: 'destructive', title: 'Error', description: typeof result.error === 'string' ? result.error : 'Verifica los campos.' })
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: typeof result.error === 'string' ? result.error : 'Verifica los campos.',
+        })
         return
       }
 
-      toast({ variant: 'success', title: mode === 'create' ? 'Servicio creado' : 'Servicio actualizado' })
+      toast({
+        variant: 'success',
+        title: mode === 'create' ? 'Servicio creado' : 'Servicio actualizado',
+      })
       setOpen(false)
-      // Optimistic UI: reload page data via Next.js revalidation
     })
   }
 
-  async function handleToggle(svc: Service, checked: boolean) {
-    setServices((prev) => prev.map((s) => s.id === svc.id ? { ...s, is_active: checked } : s))
-    await toggleService(svc.id, checked)
+  function handleToggle(svc: Service, checked: boolean) {
+    startTransition(async () => {
+      dispatchOptimistic({ type: 'toggle', id: svc.id, isActive: checked })
+      await toggleService(svc.id, checked)
+    })
   }
 
   return (
@@ -92,52 +137,64 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
             <TableBody>
               {services.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                     No hay servicios. Crea el primero.
                   </TableCell>
                 </TableRow>
               ) : (
-                services.map((svc) => (
-                  <TableRow key={svc.id} className="border-slate-100">
-                    <TableCell>
-                      <p className="font-medium">{svc.name}</p>
-                      {svc.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{svc.description}</p>}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn('h-3.5 w-3.5 rounded-full', COLOR_SWATCHES[(svc.color ?? 'blue') as AppointmentColor])} />
-                        <span className="text-xs text-muted-foreground">{COLOR_LABELS[(svc.color ?? 'blue') as AppointmentColor]}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Clock className="h-3.5 w-3.5" />
-                        {svc.duration_minutes} min
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {svc.price ? (
-                        <div className="flex items-center gap-1 text-sm">
-                          <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                          {Number(svc.price).toFixed(2)}
+                services.map((svc) => {
+                  const colorKey = (svc.color ?? 'blue') as AppointmentColor
+                  return (
+                    <TableRow key={svc.id} className="border-slate-100">
+                      <TableCell>
+                        <p className="font-medium">{svc.name}</p>
+                        {svc.description && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                            {svc.description}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <div
+                            className="h-3.5 w-3.5 rounded-full border border-black/5"
+                            style={{ backgroundColor: COLOR_HEX[colorKey] }}
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {COLOR_LABELS[colorKey]}
+                          </span>
                         </div>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={svc.is_active}
-                        onCheckedChange={(checked) => handleToggle(svc, checked)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(svc)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                          <Clock className="h-3.5 w-3.5" />
+                          {svc.duration_minutes} min
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {svc.price ? (
+                          <div className="flex items-center gap-1 text-sm">
+                            <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                            {Number(svc.price).toFixed(2)}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={svc.is_active}
+                          onCheckedChange={(checked) => handleToggle(svc, checked)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(svc)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>
@@ -174,27 +231,32 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
             <div className="space-y-2">
               <Label>Color en la agenda</Label>
               <div className="flex flex-wrap gap-2.5">
-                {APPOINTMENT_COLOR_KEYS.map(c => (
-                  <button
-                    key={c}
-                    type="button"
-                    title={COLOR_LABELS[c]}
-                    onClick={() => setFormColor(c)}
-                    className={cn(
-                      'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-all',
-                      formColor === c
-                        ? 'border-slate-600 bg-slate-50 font-semibold shadow-sm'
-                        : 'border-slate-200 hover:border-slate-400'
-                    )}
-                  >
-                    <span className={cn(
-                      'h-4 w-4 rounded-full flex-shrink-0',
-                      COLOR_SWATCHES[c],
-                      formColor === c && 'ring-2 ring-offset-1 ring-slate-400'
-                    )} />
-                    {COLOR_LABELS[c]}
-                  </button>
-                ))}
+                {APPOINTMENT_COLOR_KEYS.map(c => {
+                  const isActive = formColor === c
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      title={COLOR_LABELS[c]}
+                      onClick={() => setFormColor(c)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-all',
+                        isActive
+                          ? 'border-slate-700 bg-slate-50 font-semibold shadow-sm'
+                          : 'border-slate-200 hover:border-slate-400'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'h-4 w-4 rounded-full flex-shrink-0 border border-black/10',
+                          isActive && 'ring-2 ring-offset-1 ring-slate-400'
+                        )}
+                        style={{ backgroundColor: COLOR_HEX[c] }}
+                      />
+                      <span className="text-slate-700">{COLOR_LABELS[c]}</span>
+                    </button>
+                  )
+                })}
               </div>
               <input type="hidden" name="color" value={formColor} />
             </div>

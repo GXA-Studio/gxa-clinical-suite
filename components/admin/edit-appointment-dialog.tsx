@@ -16,7 +16,7 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
-  APPOINTMENT_COLOR_KEYS, APPOINTMENT_COLORS, COLOR_LABELS, COLOR_SWATCHES,
+  APPOINTMENT_COLOR_KEYS, APPOINTMENT_COLORS, COLOR_LABELS, COLOR_HEX,
   type AppointmentColor,
 } from '@/lib/constants/colors'
 import {
@@ -260,13 +260,14 @@ export function EditAppointmentDialog({
                           title={COLOR_LABELS[c]}
                           onClick={() => handleColorChange(c)}
                           disabled={pending}
+                          style={{ backgroundColor: COLOR_HEX[c] }}
                           className={cn(
-                            'h-6 w-6 rounded-full transition-all',
-                            COLOR_SWATCHES[c],
+                            'h-6 w-6 rounded-full transition-all border border-black/5',
                             activeColor === c
                               ? 'ring-2 ring-offset-2 ring-slate-400 scale-110'
                               : 'opacity-70 hover:opacity-100'
                           )}
+                          aria-label={COLOR_LABELS[c]}
                         />
                       ))}
                       <span className="text-xs text-slate-500">
