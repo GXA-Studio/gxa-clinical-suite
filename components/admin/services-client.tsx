@@ -12,26 +12,34 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
 import { toast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
+import {
+  APPOINTMENT_COLOR_KEYS, COLOR_LABELS, COLOR_SWATCHES,
+  type AppointmentColor,
+} from '@/lib/constants/colors'
 import { Plus, Pencil, Clock, DollarSign, Loader2 } from 'lucide-react'
 
 type FormMode = 'create' | 'edit'
 
 export function ServicesClient({ services: initial }: { services: Service[] }) {
-  const [services,  setServices]  = useState(initial)
-  const [open,      setOpen]      = useState(false)
-  const [mode,      setMode]      = useState<FormMode>('create')
-  const [selected,  setSelected]  = useState<Service | null>(null)
-  const [pending,   startTransition] = useTransition()
+  const [services,     setServices]     = useState(initial)
+  const [open,         setOpen]         = useState(false)
+  const [mode,         setMode]         = useState<FormMode>('create')
+  const [selected,     setSelected]     = useState<Service | null>(null)
+  const [formColor,    setFormColor]    = useState<AppointmentColor>('blue')
+  const [pending,      startTransition] = useTransition()
 
   function openCreate() {
     setMode('create')
     setSelected(null)
+    setFormColor('blue')
     setOpen(true)
   }
 
   function openEdit(svc: Service) {
     setMode('edit')
     setSelected(svc)
+    setFormColor((svc.color ?? 'blue') as AppointmentColor)
     setOpen(true)
   }
 
@@ -74,6 +82,7 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
             <TableHeader>
               <TableRow className="hover:bg-transparent border-slate-100">
                 <TableHead>Nombre</TableHead>
+                <TableHead>Color</TableHead>
                 <TableHead>Duración</TableHead>
                 <TableHead>Precio</TableHead>
                 <TableHead>Estado</TableHead>
@@ -93,6 +102,12 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
                     <TableCell>
                       <p className="font-medium">{svc.name}</p>
                       {svc.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{svc.description}</p>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <div className={cn('h-3.5 w-3.5 rounded-full', COLOR_SWATCHES[(svc.color ?? 'blue') as AppointmentColor])} />
+                        <span className="text-xs text-muted-foreground">{COLOR_LABELS[(svc.color ?? 'blue') as AppointmentColor]}</span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -155,6 +170,29 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
               <Label htmlFor="description">Descripción</Label>
               <Textarea id="description" name="description" rows={3}
                 defaultValue={selected?.description ?? ''} placeholder="Descripción breve del servicio…" />
+            </div>
+            <div className="space-y-2">
+              <Label>Color en la agenda</Label>
+              <div className="flex flex-wrap gap-3">
+                {APPOINTMENT_COLOR_KEYS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    title={COLOR_LABELS[c]}
+                    onClick={() => setFormColor(c)}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-all',
+                      formColor === c
+                        ? 'border-slate-700 bg-slate-50 font-semibold'
+                        : 'border-slate-200 hover:border-slate-400'
+                    )}
+                  >
+                    <span className={cn('h-3 w-3 rounded-full', COLOR_SWATCHES[c])} />
+                    {COLOR_LABELS[c]}
+                  </button>
+                ))}
+              </div>
+              <input type="hidden" name="color" value={formColor} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>

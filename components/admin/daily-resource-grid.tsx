@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { fromZonedTime } from 'date-fns-tz'
 import { User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { APPOINTMENT_COLORS, type AppointmentColor } from '@/lib/constants/colors'
 import { NewAppointmentDialog } from '@/components/admin/new-appointment-dialog'
 import {
   EditAppointmentDialog,
@@ -46,13 +47,15 @@ export interface GridAppointment {
   starts_at: string    // UTC ISO
   ends_at: string      // UTC ISO
   status: string
-  services: { name: string; duration_minutes: number } | null
+  color: string | null
+  services: { name: string; duration_minutes: number; color: string | null } | null
 }
 
 export interface GridService {
   id: string
   name: string
   duration_minutes: number
+  color: string | null
 }
 
 interface Props {
@@ -148,14 +151,15 @@ export function DailyResourceGrid({
   function handleAppointmentClick(appt: GridAppointment, e: React.MouseEvent) {
     e.stopPropagation()  // prevent cell click from firing
     setEditTarget({
-      id:                appt.id,
-      doctor_id:         appt.doctor_id,
-      service_id:        appt.service_id,
-      patient_name:      appt.patient_name,
-      patient_phone:     appt.patient_phone,
-      starts_at:         appt.starts_at,
-      ends_at:           appt.ends_at,
-      services:          appt.services,
+      id:            appt.id,
+      doctor_id:     appt.doctor_id,
+      service_id:    appt.service_id,
+      patient_name:  appt.patient_name,
+      patient_phone: appt.patient_phone,
+      starts_at:     appt.starts_at,
+      ends_at:       appt.ends_at,
+      color:         appt.color,
+      services:      appt.services,
     })
   }
 
@@ -287,6 +291,10 @@ export function DailyResourceGrid({
                     const heightPx  = Math.max(SLOT_HEIGHT_PX * 0.85, (durMins / SLOT_MINUTES) * SLOT_HEIGHT_PX - 4)
                     const isPast    = new Date(appt.starts_at) < new Date()
 
+                    // Resolve color: appointment override → service default → 'blue'
+                    const colorKey = (appt.color ?? appt.services?.color ?? 'blue') as AppointmentColor
+                    const palette  = APPOINTMENT_COLORS[colorKey]
+
                     return (
                       <button
                         key={appt.id}
@@ -297,21 +305,21 @@ export function DailyResourceGrid({
                           'transition-all hover:shadow-md hover:ring-1',
                           isPast
                             ? 'border-slate-200 bg-slate-50 hover:ring-slate-300'
-                            : 'border-blue-200 bg-blue-50 hover:ring-blue-300'
+                            : cn(palette.bg, palette.border, palette.hover)
                         )}
                         style={{ top: topPx + 2, height: heightPx }}
                         title={`${appt.patient_name} — clic para editar`}
                       >
                         <p className={cn(
                           'truncate text-[11px] font-semibold leading-tight',
-                          isPast ? 'text-slate-500' : 'text-blue-800'
+                          isPast ? 'text-slate-500' : palette.text
                         )}>
                           {String(sh).padStart(2,'0')}:{String(sm).padStart(2,'0')} · {appt.patient_name}
                         </p>
                         {heightPx > 36 && appt.services?.name && (
                           <p className={cn(
                             'truncate text-[10px] leading-tight',
-                            isPast ? 'text-slate-400' : 'text-blue-500'
+                            isPast ? 'text-slate-400' : palette.textSub
                           )}>
                             {appt.services.name}
                           </p>

@@ -80,16 +80,16 @@ async function AgendaContent({
     // Confirmed appointments that START within this clinic-local day
     supabase
       .from('appointments')
-      .select('id, doctor_id, service_id, cancellation_token, patient_name, patient_phone, starts_at, ends_at, status, services(name, duration_minutes)')
+      .select('id, doctor_id, service_id, cancellation_token, patient_name, patient_phone, starts_at, ends_at, status, color, services(name, duration_minutes, color)')
       .eq('clinic_id', clinicId)
       .eq('status', 'confirmed')
       .gte('starts_at', dayStartUtc.toISOString())
       .lte('starts_at', dayEndUtc.toISOString()),
 
-    // Active services (for the NewAppointmentDialog)
+    // Active services (for the NewAppointmentDialog + color lookup in EditDialog)
     supabase
       .from('services')
-      .select('id, name, duration_minutes')
+      .select('id, name, duration_minutes, color')
       .eq('clinic_id', clinicId)
       .eq('is_active', true)
       .order('name'),

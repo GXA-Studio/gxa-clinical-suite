@@ -21,6 +21,7 @@ export type Database = {
         Row: {
           cancellation_token: string
           clinic_id: string
+          color: string | null
           created_at: string
           doctor_id: string
           ends_at: string
@@ -38,6 +39,7 @@ export type Database = {
         Insert: {
           cancellation_token?: string
           clinic_id: string
+          color?: string | null
           created_at?: string
           doctor_id: string
           ends_at: string
@@ -55,6 +57,7 @@ export type Database = {
         Update: {
           cancellation_token?: string
           clinic_id?: string
+          color?: string | null
           created_at?: string
           doctor_id?: string
           ends_at?: string
@@ -324,6 +327,7 @@ export type Database = {
       services: {
         Row: {
           clinic_id: string
+          color: string
           created_at: string
           description: string | null
           duration_minutes: number
@@ -334,6 +338,7 @@ export type Database = {
         }
         Insert: {
           clinic_id: string
+          color?: string
           created_at?: string
           description?: string | null
           duration_minutes: number
@@ -344,6 +349,7 @@ export type Database = {
         }
         Update: {
           clinic_id?: string
+          color?: string
           created_at?: string
           description?: string | null
           duration_minutes?: number

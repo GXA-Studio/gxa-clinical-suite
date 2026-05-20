@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle, ArrowLeft, Calendar, Clock,
-  Loader2, Phone, Stethoscope, Trash2, User, Pencil,
+  Loader2, Palette, Phone, Stethoscope, Trash2, User, Pencil,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { Button }   from '@/components/ui/button'
@@ -14,7 +14,14 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
-import { adminCancelAppointment, adminRescheduleAppointment } from '@/app/(admin)/admin/agenda/actions'
+import { cn } from '@/lib/utils'
+import {
+  APPOINTMENT_COLOR_KEYS, APPOINTMENT_COLORS, COLOR_LABELS, COLOR_SWATCHES,
+  type AppointmentColor,
+} from '@/lib/constants/colors'
+import {
+  adminCancelAppointment, adminRescheduleAppointment, adminUpdateAppointmentColor,
+} from '@/app/(admin)/admin/agenda/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Doctor {
@@ -28,6 +35,7 @@ interface Service {
   id: string
   name: string
   duration_minutes: number
+  color?: string | null
 }
 
 export interface AppointmentForEdit {
@@ -38,7 +46,8 @@ export interface AppointmentForEdit {
   patient_phone: string
   starts_at: string   // UTC ISO
   ends_at: string     // UTC ISO
-  services: { name: string; duration_minutes: number } | null
+  color?: string | null
+  services: { name: string; duration_minutes: number; color?: string | null } | null
 }
 
 interface Props {
@@ -93,6 +102,12 @@ export function EditAppointmentDialog({
 
   const isPast = new Date(appointment.starts_at) < new Date()
 
+  // Color state — resolved: appointment override → service color → 'blue'
+  const resolvedColor = (appointment.color
+    ?? services.find(s => s.id === appointment.service_id)?.color
+    ?? 'blue') as AppointmentColor
+  const [activeColor, setActiveColor] = useState<AppointmentColor>(resolvedColor)
+
   // Current doctor and service display
   const currentDoctor  = doctors.find(d => d.id === appointment.doctor_id)
   const currentService = appointment.services
@@ -117,11 +132,25 @@ export function EditAppointmentDialog({
 
   function resetAndClose() {
     setView('details')
+    setActiveColor(resolvedColor)
     setNewDoctorId(appointment.doctor_id)
     setNewDate(localDateStr(appointment.starts_at, timezone))
     setNewSlotStart('')
     setSlots([])
     onOpenChange(false)
+  }
+
+  // ── Color update ─────────────────────────────────────────────────────────────
+  function handleColorChange(color: AppointmentColor) {
+    const previous = activeColor
+    setActiveColor(color)  // optimistic
+    start(async () => {
+      const result = await adminUpdateAppointmentColor(appointment.id, color)
+      if (result.error) {
+        setActiveColor(previous)
+        toast({ variant: 'destructive', title: 'Error al cambiar el color', description: result.error })
+      }
+    })
   }
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
@@ -216,6 +245,37 @@ export function EditAppointmentDialog({
               <InfoRow icon={Clock} label="Horario">
                 {fmtTime(appointment.starts_at, timezone)} – {fmtTime(appointment.ends_at, timezone)}
               </InfoRow>
+
+              {/* Color picker — only for future appointments */}
+              {!isPast && (
+                <div className="flex items-start gap-2 pt-1">
+                  <Palette className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <div className="min-w-0 text-sm">
+                    <span className="text-slate-400">Color: </span>
+                    <div className="mt-1.5 flex gap-2">
+                      {APPOINTMENT_COLOR_KEYS.map(c => (
+                        <button
+                          key={c}
+                          type="button"
+                          title={COLOR_LABELS[c]}
+                          onClick={() => handleColorChange(c)}
+                          disabled={pending}
+                          className={cn(
+                            'h-5 w-5 rounded-full border-2 transition-all',
+                            COLOR_SWATCHES[c],
+                            activeColor === c
+                              ? 'scale-110 border-slate-700'
+                              : 'border-transparent hover:border-slate-400'
+                          )}
+                        />
+                      ))}
+                      <span className={cn('ml-1 text-xs leading-5', APPOINTMENT_COLORS[activeColor].text)}>
+                        {COLOR_LABELS[activeColor]}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Status chip */}
               {isPast && (

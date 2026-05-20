@@ -11,6 +11,7 @@ const ServiceSchema = z.object({
   duration_minutes: z.coerce.number().int().min(5).max(480),
   price:            z.coerce.number().min(0).optional().nullable(),
   description:      z.string().max(500).optional().nullable(),
+  color:            z.enum(['blue', 'emerald', 'purple', 'amber', 'rose']).default('blue'),
 })
 
 async function getClinicContext(supabase: Awaited<ReturnType<typeof createClient>>) {

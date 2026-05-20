@@ -1,6 +1,6 @@
 # PROJECT STATE — Medical Booking Boilerplate
 > **Single source of truth** for all future sessions.  
-> Last updated: **2026-05-20** — Smart Slot Forwarding + búsqueda global server-side de citas en admin.
+> Last updated: **2026-05-20** — Sistema de colores cromáticos para tarjetas de cita en `/admin/agenda`.
 
 ---
 
@@ -140,6 +140,32 @@ El staff puede crear citas telefónicamente desde `/admin/appointments` sin que 
 
 **Smart Forwarding (Dead-End Prevention)**: cuando el día seleccionado no tiene ningún hueco disponible, el diálogo muestra un empty state con el botón "Buscar próximo hueco libre". Al pulsarlo, se ejecuta la Server Action `findNextAvailableDate` (`app/(booking)/[clinicSlug]/actions.ts`) que escanea día a día en Supabase (sin pasar por `/api/slots` ni tocar el rate-limiter de Redis) hasta encontrar el primer día con disponibilidad (límite 45 días). Si hay médico seleccionado, busca sólo sus huecos (`get_available_slots`); si no hay médico (modo "cualquier profesional"), evalúa toda la clínica (`get_slots_for_service`). Al encontrar la fecha, `setDate(found)` actualiza el input de fecha, los efectos existentes limpian y re-fetean los slots automáticamente. Si no hay disponibilidad en 45 días se muestra un mensaje de fallback. La misma Server Action se reutiliza desde el flujo público de pacientes (`WeeklyGrid`).
 
+### Sistema de Colores de Citas (Agenda)
+
+Las tarjetas de cita en `/admin/agenda` (`DailyResourceGrid`) soportan categorización visual por color para que recepción identifique flujos de trabajo de un vistazo.
+
+**Herencia cromática** (prioridad de mayor a menor):
+1. `appointments.color` — override por cita individual (nullable; `null` = heredar del servicio)
+2. `services.color` — color base del tipo de servicio (NOT NULL, DEFAULT `'blue'`)
+3. `'blue'` — fallback final en el cliente
+
+**Colores válidos**: `'blue' | 'emerald' | 'purple' | 'amber' | 'rose'`. Las citas pasadas siempre muestran gris (`slate`) independientemente del color asignado.
+
+**Arquitectura**:
+- `lib/constants/colors.ts` — diccionario estático `APPOINTMENT_COLORS` (bg, border, text, textSub, hover), `COLOR_SWATCHES` y `COLOR_LABELS`.
+- `adminUpdateAppointmentColor(id, color)` — server action en `agenda/actions.ts`; guarda solo el campo `appointments.color`, revalida `/admin/agenda`.
+- `ServiceSchema` (`services/actions.ts`) incluye `color: z.enum([...]).default('blue')`.
+
+**UX**:
+- `EditAppointmentDialog` — picker de 5 puntos circulares en la vista de detalles de citas futuras. Guardado optimista con rollback si la action falla.
+- `ServicesClient` — picker con etiquetas pill en el formulario de servicio; columna "Color" con pastilla coloreada en la tabla.
+
+**DB** (migración `20260520000000_add_color_columns.sql`):
+```sql
+ALTER TABLE services     ADD COLUMN IF NOT EXISTS color text NOT NULL DEFAULT 'blue';
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS color text;
+```
+
 ---
 
 ## 4. Seguridad y Legal (Auditado)
@@ -245,7 +271,8 @@ CRON_SECRET=                      # 32-byte hex random — pendiente de añadir 
 ```
 clinics          id, name, slug*, timezone, phone, address, settings(jsonb)
 profiles         id→auth.users, clinic_id, full_name, role(admin|staff)
-services         id, clinic_id, name, duration_minutes, price, is_active
+services         id, clinic_id, name, duration_minutes, price, is_active,
+                 color(text, DEFAULT 'blue')
 doctors          id, clinic_id, name, email, specialty, avatar_url, is_active
 doctor_services  doctor_id, service_id  [PK composite]
 schedules        id, doctor_id, day_of_week(0-6), start_time, end_time, is_active
@@ -255,7 +282,8 @@ appointments     id, clinic_id, doctor_id, service_id,
                  status(confirmed|cancelled),
                  cancellation_token(UUID, UNIQUE),
                  reminder_sent(BOOLEAN, DEFAULT false),
-                 notes
+                 notes,
+                 color(text, NULLABLE — override por cita; NULL = hereda services.color)
 ```
 
 ### RPCs Activas
@@ -274,6 +302,7 @@ appointments     id, clinic_id, doctor_id, service_id,
 | `20260515_final_schema.sql` | Schema completo + seed + trigger auto-perfil (CERTIFICADO) |
 | `20260515_perf_indexes.sql` | 5 índices B-Tree (clínica, servicios, médicos, citas) |
 | `003_whatsapp_instant_booking.sql` | `cancellation_token`, `reminder_sent`, `book_slot_confirmed` RPC |
+| `20260520000000_add_color_columns.sql` | `services.color` (text DEFAULT 'blue') + `appointments.color` (text NULLABLE) |
 
 ---
 
@@ -292,7 +321,17 @@ v_win_end   := timezone(r_doc.doc_tz, (p_date + r_sched.end_time)::TIMESTAMP);
 
 Prueba empírica ejecutada en producción: `10:00 local` en mayo (CEST) → `08:00 UTC`; `10:00 local` en noviembre (CET) → `09:00 UTC`. Readback local siempre = `10:00` ✓
 
-### 8.2 Paginación Semanal — Invariante de Navegación
+### 8.2 Color de Citas — Diccionario Estático (Tailwind Purge Prevention)
+
+Las tarjetas de cita en `/admin/agenda` se colorean mediante un sistema de herencia cromática:
+1. `appointments.color` (override por cita) → `services.color` (color base del servicio) → `'blue'` (fallback)
+2. Las citas pasadas siempre muestran gris (`slate`) independientemente del color asignado.
+
+El diccionario de clases Tailwind vive en `lib/constants/colors.ts` y exporta `APPOINTMENT_COLORS` con claves estáticas. **NUNCA interpoler nombres de clase dinámicamente** (ej. `` `bg-${color}-50` ``) — Tailwind purgará esas clases en producción. Todos los valores del diccionario deben aparecer verbatim en el código fuente.
+
+Los colores válidos son: `'blue' | 'emerald' | 'purple' | 'amber' | 'rose'`. Este enum está validado tanto en el `ServiceSchema` (Zod) como en `adminUpdateAppointmentColor` (server action).
+
+### 8.3 Paginación Semanal — Invariante de Navegación
 
 `parseISO('YYYY-MM-DD')` en date-fns v4 devuelve medianoche **local** (no UTC). La conversión `.toISOString().slice(0,10)` introduce un desplazamiento de −1 día en zonas UTC+ al escribir el estado de navegación.
 

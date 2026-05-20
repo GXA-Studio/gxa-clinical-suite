@@ -139,3 +139,31 @@ export async function adminRescheduleAppointment(
   revalidatePath('/admin/appointments')
   return { success: true }
 }
+
+// ─── Update color ─────────────────────────────────────────────────────────────
+const VALID_COLORS = ['blue', 'emerald', 'purple', 'amber', 'rose'] as const
+
+export async function adminUpdateAppointmentColor(
+  appointmentId: string,
+  color: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!UUID_RE.test(appointmentId)) return { success: false, error: 'ID de cita inválido.' }
+  if (!(VALID_COLORS as readonly string[]).includes(color)) return { success: false, error: 'Color inválido.' }
+
+  const supabase = await createClient()
+  const clinicId = await resolveClinicId(supabase)
+
+  const { error } = await supabase
+    .from('appointments')
+    .update({ color })
+    .eq('id', appointmentId)
+    .eq('clinic_id', clinicId)
+
+  if (error) {
+    console.error('[adminUpdateAppointmentColor] DB error:', error)
+    return { success: false, error: 'Error al actualizar el color.' }
+  }
+
+  revalidatePath('/admin/agenda')
+  return { success: true }
+}
