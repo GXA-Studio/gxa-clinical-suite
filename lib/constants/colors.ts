@@ -26,9 +26,9 @@ export const COLOR_LABELS: Record<AppointmentColor, string> = {
 
 // Solid background for swatch circles in the picker UI
 export const COLOR_SWATCHES: Record<AppointmentColor, string> = {
-  blue:    'bg-blue-400',
-  emerald: 'bg-emerald-400',
-  purple:  'bg-purple-400',
-  amber:   'bg-amber-400',
-  rose:    'bg-rose-400',
+  blue:    'bg-blue-500',
+  emerald: 'bg-emerald-500',
+  purple:  'bg-purple-500',
+  amber:   'bg-amber-500',
+  rose:    'bg-rose-500',
 }

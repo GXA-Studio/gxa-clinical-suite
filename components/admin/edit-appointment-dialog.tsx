@@ -252,7 +252,7 @@ export function EditAppointmentDialog({
                   <Palette className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-400" />
                   <div className="min-w-0 text-sm">
                     <span className="text-slate-400">Color: </span>
-                    <div className="mt-1.5 flex gap-2">
+                    <div className="mt-1.5 flex items-center gap-2.5">
                       {APPOINTMENT_COLOR_KEYS.map(c => (
                         <button
                           key={c}
@@ -261,15 +261,15 @@ export function EditAppointmentDialog({
                           onClick={() => handleColorChange(c)}
                           disabled={pending}
                           className={cn(
-                            'h-5 w-5 rounded-full border-2 transition-all',
+                            'h-6 w-6 rounded-full transition-all',
                             COLOR_SWATCHES[c],
                             activeColor === c
-                              ? 'scale-110 border-slate-700'
-                              : 'border-transparent hover:border-slate-400'
+                              ? 'ring-2 ring-offset-2 ring-slate-400 scale-110'
+                              : 'opacity-70 hover:opacity-100'
                           )}
                         />
                       ))}
-                      <span className={cn('ml-1 text-xs leading-5', APPOINTMENT_COLORS[activeColor].text)}>
+                      <span className="text-xs text-slate-500">
                         {COLOR_LABELS[activeColor]}
                       </span>
                     </div>

@@ -173,7 +173,7 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
             </div>
             <div className="space-y-2">
               <Label>Color en la agenda</Label>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2.5">
                 {APPOINTMENT_COLOR_KEYS.map(c => (
                   <button
                     key={c}
@@ -181,13 +181,17 @@ export function ServicesClient({ services: initial }: { services: Service[] }) {
                     title={COLOR_LABELS[c]}
                     onClick={() => setFormColor(c)}
                     className={cn(
-                      'flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-all',
+                      'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-all',
                       formColor === c
-                        ? 'border-slate-700 bg-slate-50 font-semibold'
+                        ? 'border-slate-600 bg-slate-50 font-semibold shadow-sm'
                         : 'border-slate-200 hover:border-slate-400'
                     )}
                   >
-                    <span className={cn('h-3 w-3 rounded-full', COLOR_SWATCHES[c])} />
+                    <span className={cn(
+                      'h-4 w-4 rounded-full flex-shrink-0',
+                      COLOR_SWATCHES[c],
+                      formColor === c && 'ring-2 ring-offset-1 ring-slate-400'
+                    )} />
                     {COLOR_LABELS[c]}
                   </button>
                 ))}
