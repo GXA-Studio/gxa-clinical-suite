@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import LandingForm from '@/components/marketing/landing-form'
 
 const DEMO_PATH = '/clinica-prueba'
+const ADMIN_PATH = '/admin'
 const CONTACT_EMAIL = 'studiogxa@gmail.com'
 
 export const metadata: Metadata = {
@@ -109,8 +110,11 @@ export default function Landing() {
             <a href="#pricing" className="hidden md:inline-block text-muted-foreground hover:text-foreground">
               Precios
             </a>
+            <Button asChild size="sm" variant="ghost">
+              <Link href={DEMO_PATH}>Demo paciente</Link>
+            </Button>
             <Button asChild size="sm" variant="outline">
-              <Link href={DEMO_PATH}>Probar el demo</Link>
+              <Link href={ADMIN_PATH}>Panel demo</Link>
             </Button>
           </nav>
         </div>
@@ -142,6 +146,59 @@ export default function Landing() {
         <p className="text-xs text-muted-foreground mt-6">
           Demo navegable. No requiere registro ni datos personales.
         </p>
+      </section>
+
+      <Separator />
+
+      {/* ── DEMO DOBLE ────────────────────────────────────────────── */}
+      <section className="container py-16 md:py-20">
+        <div className="max-w-2xl mx-auto text-center mb-12">
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
+            Prueba el sistema completo
+          </h2>
+          <p className="text-muted-foreground">
+            Sin registro. Sin límites. La misma app que usaría tu clínica.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+          <div className="border rounded-lg p-8 bg-card">
+            <span className="inline-block text-xs font-medium bg-muted px-2 py-1 rounded mb-4">
+              Vista del paciente
+            </span>
+            <h3 className="font-bold text-lg mb-2">Como lo ve quien reserva</h3>
+            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+              Elige servicio, médico, fecha y hora. Recibe confirmación por WhatsApp en segundos.
+            </p>
+            <Button asChild className="w-full">
+              <Link href={DEMO_PATH}>
+                Reservar una cita <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+
+          <div className="border rounded-lg p-8 bg-card">
+            <span className="inline-block text-xs font-medium bg-primary/10 text-primary px-2 py-1 rounded mb-4">
+              Panel de gestión
+            </span>
+            <h3 className="font-bold text-lg mb-2">Como lo ves tú</h3>
+            <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+              Agenda, citas, médicos y horarios en tiempo real. Entra con las credenciales del demo:
+            </p>
+            <div className="bg-muted rounded-md px-4 py-3 mb-6 font-mono text-sm space-y-1">
+              <div>
+                <span className="text-muted-foreground">email: </span>admin@demo.com
+              </div>
+              <div>
+                <span className="text-muted-foreground">contraseña: </span>demo1234
+              </div>
+            </div>
+            <Button asChild variant="outline" className="w-full">
+              <Link href={ADMIN_PATH}>
+                Entrar al panel <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </div>
       </section>
 
       <Separator />
