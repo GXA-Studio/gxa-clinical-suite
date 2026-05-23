@@ -1,7 +1,7 @@
 'use server'
 import { after } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { sendWhatsAppConfirmation } from '@/lib/twilio/client'
 import { getBaseUrl, isValidE164, sanitizeName } from '@/lib/utils'
 import { isGuestMode, DEMO_RESULT } from '@/lib/admin/guest-guard'
@@ -77,8 +77,10 @@ export async function bookAppointmentManual(data: BookManualFormData) {
     .single()
   if (!clinic) return { error: 'Clínica no encontrada.' }
 
-  const serviceSupabase = createServiceClient()
-  const { data: appointment, error: bookError } = await serviceSupabase.rpc('book_slot_confirmed', {
+  // book_slot_confirmed is GRANTed to anon/authenticated and validates its own
+  // clinic/doctor/service relationships (S-1 through S-4); the admin's session
+  // client is enough to invoke it.
+  const { data: appointment, error: bookError } = await supabase.rpc('book_slot_confirmed', {
     p_clinic_id:     clinicId,
     p_doctor_id:     doctorId,
     p_service_id:    serviceId,

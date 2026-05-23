@@ -1,5 +1,19 @@
 import type { NextConfig } from 'next'
 
+// Derive the Upstash REST host from the configured URL so rotating clusters
+// only requires changing the env var. Falls back to a wildcard match if the
+// var is unset (dev) — fetch will still go through, no silent CSP block.
+function upstashConnectSrc(): string {
+  const raw = process.env.UPSTASH_REDIS_REST_URL
+  if (!raw) return 'https://*.upstash.io'
+  try {
+    return `https://${new URL(raw).host}`
+  } catch {
+    console.warn('[next.config] UPSTASH_REDIS_REST_URL is malformed; widening CSP to https://*.upstash.io')
+    return 'https://*.upstash.io'
+  }
+}
+
 const securityHeaders = [
   // H-03 FIX: prevent embedding in iframes (clickjacking on booking form)
   { key: 'X-Frame-Options',        value: 'DENY' },
@@ -22,8 +36,8 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https://*.supabase.co",
-      // Supabase REST + Realtime WebSocket
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://lenient-buck-124268.upstash.io",
+      // Supabase REST + Realtime WebSocket + Upstash Redis (derived from env)
+      `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${upstashConnectSrc()}`,
       "font-src 'self' data: https://fonts.gstatic.com",
       "frame-ancestors 'none'",
     ].join('; '),

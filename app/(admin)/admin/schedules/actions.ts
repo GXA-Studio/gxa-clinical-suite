@@ -1,6 +1,7 @@
 'use server'
 import { after } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import { fromZonedTime } from 'date-fns-tz'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { invalidateBookingCache } from '@/lib/cache'
 import { sendCancellationWhatsApp } from '@/lib/twilio/client'
@@ -230,9 +231,6 @@ export async function checkExceptionConflicts(input: ExceptionInput): Promise<{
 // Local datetime ("YYYY-MM-DDTHH:MM[:SS][.SSS]") + IANA TZ → UTC Date.
 // Reuses date-fns-tz to stay DST-safe (same library used elsewhere in this codebase).
 function utcFromClinicLocal(localDateTime: string, tz: string): Date {
-  // Lazy require to avoid bundling overhead in the hot path of public routes.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { fromZonedTime } = require('date-fns-tz') as typeof import('date-fns-tz')
   return fromZonedTime(localDateTime, tz)
 }
 

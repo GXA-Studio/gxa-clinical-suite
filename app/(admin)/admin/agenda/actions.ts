@@ -37,9 +37,10 @@ export async function adminCancelAppointment(
 
   const supabase = await createClient()
   const clinicId = await resolveClinicId(supabase)
-  const svc = createServiceClient()
 
-  const { data, error } = await svc
+  // RLS allows admins to UPDATE appointments inside their own clinic, so the
+  // session client suffices — no need to widen blast radius with service role.
+  const { data, error } = await supabase
     .from('appointments')
     .update({ status: 'cancelled' })
     .eq('id', appointmentId)

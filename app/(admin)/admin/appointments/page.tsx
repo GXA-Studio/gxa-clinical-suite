@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { AppointmentsTable } from '@/components/admin/appointments-table'
 import { NewAppointmentDialog } from '@/components/admin/new-appointment-dialog'
@@ -6,7 +7,12 @@ import { getAdminProfile } from '@/lib/admin/profile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+
+// P-5 — Bound the appointments query so admins with long histories don't
+// pay for hundreds of rows on every navigation. The 50-row page size is the
+// same shape the table renders comfortably on the smallest viewport.
+const PAGE_SIZE = 50
 
 // ─── Inner skeleton (table area only) ────────────────────────────────────────
 // Shown by the Suspense boundary while appointments stream in.
@@ -67,6 +73,20 @@ const SORT_MAP: Record<string, { col: string; asc: boolean }> = {
   created_desc: { col: 'created_at',   asc: false },
 }
 
+function buildPageUrl(
+  page: number,
+  searchParams: { status?: string; date?: string; q?: string; sort?: string },
+): string {
+  const params = new URLSearchParams()
+  if (searchParams.status) params.set('status', searchParams.status)
+  if (searchParams.date)   params.set('date',   searchParams.date)
+  if (searchParams.q)      params.set('q',      searchParams.q)
+  if (searchParams.sort)   params.set('sort',   searchParams.sort)
+  if (page > 1)            params.set('page',   String(page))
+  const qs = params.toString()
+  return qs ? `/admin/appointments?${qs}` : '/admin/appointments'
+}
+
 async function AppointmentsSection({
   clinicId,
   timezone,
@@ -74,6 +94,7 @@ async function AppointmentsSection({
   date,
   q,
   sort,
+  page,
 }: {
   clinicId: string
   timezone: string
@@ -81,9 +102,11 @@ async function AppointmentsSection({
   date?: string
   q?: string
   sort?: string
+  page: number
 }) {
   const supabase = await createClient()
   const { col: sortCol, asc: sortAsc } = SORT_MAP[sort ?? 'date_asc'] ?? SORT_MAP.date_asc
+  const offset = (page - 1) * PAGE_SIZE
 
   let query = supabase
     .from('appointments')
@@ -94,7 +117,7 @@ async function AppointmentsSection({
     `)
     .eq('clinic_id', clinicId)
     .order(sortCol, { ascending: sortAsc })
-    .limit(200)
+    .range(offset, offset + PAGE_SIZE - 1)
 
   if (status && status !== 'all') {
     query = query.eq('status', status as 'confirmed' | 'cancelled')
@@ -115,7 +138,44 @@ async function AppointmentsSection({
   }
 
   const { data: appointments } = await query
-  return <AppointmentsTable appointments={appointments ?? []} timezone={timezone} />
+  const rows = appointments ?? []
+  // Heuristic: a full page implies there may be more (avoids a count(*) query).
+  const hasNext = rows.length === PAGE_SIZE
+
+  return (
+    <>
+      <AppointmentsTable appointments={rows} timezone={timezone} />
+      {(page > 1 || hasNext) && (
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <span className="text-xs text-muted-foreground">Página {page}</span>
+          <div className="flex items-center gap-2">
+            {page > 1 ? (
+              <Button asChild variant="outline" size="sm" className="gap-1">
+                <Link href={buildPageUrl(page - 1, { status, date, q, sort })}>
+                  <ChevronLeft className="h-4 w-4" /> Anterior
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" className="gap-1" disabled>
+                <ChevronLeft className="h-4 w-4" /> Anterior
+              </Button>
+            )}
+            {hasNext ? (
+              <Button asChild variant="outline" size="sm" className="gap-1">
+                <Link href={buildPageUrl(page + 1, { status, date, q, sort })}>
+                  Siguiente <ChevronRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" className="gap-1" disabled>
+                Siguiente <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
 
 // ─── Dialog data loader (inside its own Suspense) ────────────────────────────
@@ -144,9 +204,10 @@ async function DialogLoader({ clinicId }: { clinicId: string }) {
 export default async function AppointmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; date?: string; q?: string; sort?: string }>
+  searchParams: Promise<{ status?: string; date?: string; q?: string; sort?: string; page?: string }>
 }) {
-  const { status, date, q, sort } = await searchParams
+  const { status, date, q, sort, page: pageRaw } = await searchParams
+  const page = Math.max(1, Number.parseInt(pageRaw ?? '1', 10) || 1)
   const { clinicId, timezone } = await getAdminProfile()
 
   return (
@@ -179,6 +240,7 @@ export default async function AppointmentsPage({
           date={date}
           q={q}
           sort={sort}
+          page={page}
         />
       </Suspense>
     </div>
