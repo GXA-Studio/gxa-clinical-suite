@@ -1,6 +1,6 @@
 # PROJECT STATE — Medical Booking Boilerplate · Pipeline Técnico
 > **Single source of truth técnico** para todas las sesiones futuras.  
-> Última actualización: **2026-05-23** — Ultra-Review audit + critical security patches (S-1–S-10), B-1 race-condition fix en `createScheduleException`, y purga de RPCs OTP legacy (`book_slot`, `confirm_appointment`).  
+> Última actualización: **2026-05-23** — Ultra-Review audit completo: security (S-1–S-10), logic (B-1–B-9), performance (P-1, P-5, P-6), tech-debt (D-1–D-12). Sin deuda técnica crítica pendiente.  
 > Para perspectiva de producto y flujos funcionales, ver **`CLINIC_PRODUCT_STATE.md`**.
 
 ---
@@ -138,7 +138,7 @@ marketing_leads                                                -- DOMINIO GXA ST
 ```
 
 **Columnas eliminadas de `appointments`**: `otp_code_hash`, `otp_expires_at` (migration `20260516_remove_pending_status.sql`).  
-**`clinics.admin_id` NO EXISTE** en la DB — el `lib/supabase/types.ts` lo lista erróneamente (schema drift pendiente de corregir).
+**`lib/supabase/types.ts`** regenerado vía `npm run db:types` — refleja el esquema actual (sin `admin_id`, con `marketing_leads`, `insurances`, `doctor_insurances`, RPCs actuales).
 
 ---
 
@@ -152,7 +152,7 @@ marketing_leads                                                -- DOMINIO GXA ST
 | `idx_appointments_doctor_slots` | appointments | `(doctor_id, starts_at)` | ✅ Activo |
 | `idx_appointments_clinic_starts` | appointments | `(clinic_id, status, starts_at)` | ✅ Activo |
 | `idx_appt_patient_phone` | appointments | `patient_phone` btree (total) | ⚠️ Poco selectivo |
-| `idx_appt_otp_expiry` | appointments | filtro `status='pending'` | 💀 MUERTO — status ya no puede ser 'pending' |
+| `idx_appt_clinic_status_starts_desc` | appointments | `(clinic_id, status, starts_at DESC)` | ✅ Activo — P-6, cubre listados de admin |
 | `marketing_leads_created_at_idx` | marketing_leads | `created_at DESC` | ✅ Activo |
 | `marketing_leads_status_idx` | marketing_leads | `status` | ✅ Activo |
 | `marketing_leads_email_idx` | marketing_leads | `email` | ✅ Activo |
@@ -162,7 +162,7 @@ marketing_leads                                                -- DOMINIO GXA ST
 
 ### 2.3 RPCs Activas
 
-Todas las SECURITY DEFINER tienen `SET search_path = pg_catalog, public` (fix S-4, migration `20260523000000`).
+Todas las SECURITY DEFINER tienen `SET search_path = pg_catalog, public` (fix S-4: RPCs públicas en `20260523000000`; trigger functions y `get_active_dow_for_service` en `20260523200000`).
 
 | Función | Argumentos | Returns | Caller | Grant |
 |---|---|---|---|---|
@@ -201,8 +201,9 @@ Todas las SECURITY DEFINER tienen `SET search_path = pg_catalog, public` (fix S-
 
 | Función | Tipo | SECURITY DEFINER | search_path | Estado |
 |---|---|---|---|---|
-| `fn_handle_new_user()` | TRIGGER (after insert on auth.users) | ✅ | ❌ **Falta** | ⚠️ S-4 parcial pendiente |
-| `fn_set_updated_at()` | TRIGGER (before update on clinics) | ✅ | ❌ **Falta** | ⚠️ S-4 parcial pendiente |
+| `fn_handle_new_user()` | — | — | — | **N/A — no existe en la DB** (hallazgo ultra-review; función referenciada pero nunca creada) |
+| `fn_set_updated_at()` | TRIGGER (before update on clinics) | ✅ | ✅ `pg_catalog, public` | ✅ Fijado en `20260523200000` |
+| `fn_check_schedule_overlap()` | TRIGGER (before insert/update on schedules) | ✅ | ✅ `pg_catalog, public` | ✅ Fijado en `20260523200000` |
 
 ---
 
@@ -210,10 +211,8 @@ Todas las SECURITY DEFINER tienen `SET search_path = pg_catalog, public` (fix S-
 
 | Archivo | Contenido | Nota |
 |---|---|---|
-| `001_initial.sql` | Schema base inicial (versión 1) | ⚠️ Duplicado con `20260515000000` y `20260515_final_schema` |
 | `002_add_phone_constraint.sql` | Constraint E.164 en patient_phone | — |
 | `003_whatsapp_instant_booking.sql` | `cancellation_token`, `reminder_sent`, `book_slot_confirmed` RPC (versión 1) | — |
-| `20260515000000_initial_schema.sql` | Schema base (versión 2, con variaciones) | ⚠️ Duplicado; no idempotente |
 | `20260515100000_slots_for_service.sql` | `get_slots_for_service` RPC (versión 1) | — |
 | `20260515200000_reschedule_rpc.sql` | `reschedule_appointment` RPC (versión 1) | — |
 | `20260515300000_security_patches.sql` | S-04 previo: doctor ∈ clinic en `book_slot_confirmed` | — |
@@ -229,9 +228,9 @@ Todas las SECURITY DEFINER tienen `SET search_path = pg_catalog, public` (fix S-
 | `20260522120000_marketing_leads.sql` | Tabla `marketing_leads` (dominio GXA Studio) | — |
 | `20260522130000_clinic_legal_fields.sql` | `clinics.legal_name` + `clinics.cif` | — |
 | `20260523000000_critical_security_patches.sql` | S-1 (P0007) + S-2 (P0008) + S-3 (P0009/P0010) + S-4 (`search_path` en 4 RPCs) | — |
-| `20260523100000_drop_legacy_otp_rpcs.sql` | `DROP FUNCTION book_slot`, `DROP FUNCTION confirm_appointment` | Última migración aplicada |
-
-**Deuda D-1**: `001_initial.sql`, `20260515000000_initial_schema.sql` y `20260515_final_schema.sql` definen bases similares con variaciones. Sin ser idempotentes. Consolidar a una sola migración inicial antes del próximo `supabase db push`.
+| `20260523100000_drop_legacy_otp_rpcs.sql` | `DROP FUNCTION book_slot`, `DROP FUNCTION confirm_appointment` | — |
+| `20260523200000_logic_fixes_and_enums.sql` | B-4 (enum rebuild appointment_status), S-4 extendido (fn triggers + get_active_dow), B-6 (`update_doctor_with_services` RPC atómica) | — |
+| `20260523300000_perf_and_schema_cleanup.sql` | P-1 (CTE rewrite de slot RPCs), P-6 (idx_appt_clinic_status_starts_desc), D-5 (policy `public_read_clinics`), D-6 (CHECK constraints color) | **Última migración aplicada** |
 
 ---
 
@@ -252,13 +251,13 @@ Todos los limiters **fail open** (si Redis no está disponible, la petición pas
 
 - **Admin**: opera solo sobre su `clinic_id` (extraído de `profiles` via `auth.uid()`).
 - **anon**: puede ejecutar RPCs `get_available_slots`, `get_slots_for_service`, `book_slot_confirmed`.
-- **service_role**: bypassa RLS; usado por `cancelByToken`, `cancelOverlappingAppointments`, `bookAppointmentManual`, `adminCancelAppointment`.
+- **service_role**: bypassa RLS; usado solo por `cancelByToken`, `cancelOverlappingAppointments` y `reschedule_appointment` RPC. `adminCancelAppointment` y `bookAppointmentManual` usan la sesión autenticada del admin (session client) — sin sobrelevantar a service_role (fix D-10).
 - **marketing_leads**: RLS deny-by-default (sin políticas). Solo service_role vía `/api/leads`.
-- **clinics (public read)**: la policy `public_read_clinics` NO está en ningún archivo de migración — drift detectado. El booking público funciona en prod porque existe en la DB directamente. **Pendiente**: añadir la policy al repo o reemplazar las queries anon a `clinics` por `createServiceClient()`.
+- **clinics (public read)**: policy `public_read_clinics` añadida en migración `20260523300000_perf_and_schema_cleanup.sql` — drift resuelto.
 
 ### 3.3 SECURITY DEFINER — search_path
 
-Estado tras migración `20260523000000`:
+Estado tras migraciones `20260523000000` + `20260523200000`:
 
 | Función | search_path fijado |
 |---|---|
@@ -266,8 +265,10 @@ Estado tras migración `20260523000000`:
 | `get_slots_for_service` | ✅ |
 | `book_slot_confirmed` | ✅ |
 | `reschedule_appointment` | ✅ |
-| `fn_handle_new_user` | ❌ Pendiente |
-| `fn_set_updated_at` | ❌ Pendiente |
+| `get_active_dow_for_service` | ✅ Fijado en `20260523200000` |
+| `fn_handle_new_user` | **N/A** — función no existe en la DB |
+| `fn_set_updated_at` | ✅ Fijado en `20260523200000` |
+| `fn_check_schedule_overlap` | ✅ Fijado en `20260523200000` |
 
 ### 3.4 Autenticación Admin y Modo Demo
 
@@ -411,24 +412,47 @@ Reglas asociadas (no romper):
 - Si el `UPDATE` falla, `createScheduleException` debe hacer rollback del INSERT (`DELETE` por id) antes de devolver el error, para no dejar la excepción bloqueando la agenda sin haber avisado a los pacientes afectados.
 - `checkExceptionConflicts` solo se usa para poblar el `AlertDialog`; el conteo final mostrado al admin viene de `cancelledCount` (= `rows.length` del UPDATE), nunca del check previo.
 
+### 6.8 Slot RPCs — Arquitectura CTE (P-1)
+
+`get_available_slots` y `get_slots_for_service` reescritas (migración `20260523300000`) para usar 6 CTEs que precargan los conjuntos de conflicto **una sola vez** antes del bucle de generación de slots:
+
+```sql
+WITH
+  full_day_off     AS (SELECT 1 FROM doctor_schedule_exceptions WHERE ... AND is_working=false AND start_time IS NULL),
+  custom_windows   AS (SELECT start_time, end_time FROM doctor_schedule_exceptions WHERE ... AND is_working=true),
+  effective_windows AS (-- schedules normales si no hay custom_windows, si no, custom_windows),
+  partial_blocks   AS (SELECT tstzrange(...) FROM doctor_schedule_exceptions WHERE is_working=false AND start_time IS NOT NULL),
+  same_day_appts   AS (SELECT tstzrange(starts_at, ends_at, '[)') FROM appointments WHERE status='confirmed'),
+  candidate_slots  AS (-- genera el rango de slots de la ventana efectiva)
+SELECT slot_start FROM candidate_slots
+WHERE NOT EXISTS (SELECT 1 FROM partial_blocks WHERE partial_blocks.r && slot_range)
+  AND NOT EXISTS (SELECT 1 FROM same_day_appts WHERE same_day_appts.r && slot_range)
+```
+
+**Invariante**: los CTEs `partial_blocks` y `same_day_appts` se materializan una vez. El filtro final es un NOT EXISTS sobre estructuras en memoria, no un EXISTS iterativo contra la tabla. **Nunca revertir al patrón `EXISTS (SELECT 1 FROM appointments WHERE …)` dentro del bucle de generación de slots** — multiplica las lecturas de tabla por número de slots candidatos.
+
 ---
 
 ## 7. Deuda Técnica Conocida
 
-| ID | Descripción | Impacto | Prioridad |
-|---|---|---|---|
-| **D-1** | Migraciones duplicadas: `001_initial`, `20260515000000_initial_schema`, `20260515_final_schema` definen bases similares sin ser idempotentes | `supabase db push` futuro puede chocar | Alta |
-| **D-2** | `lib/supabase/types.ts` desactualizado: tiene `clinics.admin_id` inexistente, falta `marketing_leads`/`insurances`/`doctor_insurances`/`legal_name`/`cif`, lista RPCs muertas (`book_slot`, `confirm_appointment`), columnas `otp_*` | Casts `as never` / `as unknown` en código | Alta |
-| **D-5** | `appointment_status` type enum aún expone `'pending'` aunque el CHECK ya no lo permite | tipos.ts diverge de la DB | Baja |
-| **D-6** | `services.color` y `appointments.color` sin CHECK constraint en DB (solo Zod lo valida) | UPDATE SQL directo puede insertar valores inválidos | Baja |
-| **D-7** | `vercel.json` no existe en el repo. §8 lo documenta como "vacío" pero el archivo no está | Cron no activable sin crear el archivo | Baja |
-| **D-8** | `public_read_clinics` policy no está en ninguna migración — solo existe en la DB de prod | Schema drift; si se dropea la DB no se recrea | Media |
-| **D-9** | `fn_handle_new_user` y `fn_set_updated_at` son SECURITY DEFINER sin `SET search_path` | CVE-class search_path hijacking (S-4 parcial) | Alta |
-| **D-10** | `idx_appt_otp_expiry` filtra por `status='pending'` que ya no existe → índice muerto | Waste de storage y mantenimiento PG | Baja |
-| **D-11** | `bookAppointmentManual.sanitizePhone` hardcoded a España (`+34` si 9 dígitos 6/7) | Clínicas no españolas reciben número corrupto | Media (antes de internacionalizar) |
-| **D-12** | `getBaseUrl()` tiene PROD_FALLBACK hardcoded a `medical-booking-boilerplate.vercel.app` | Forks / clientes con otro dominio reciben links rotos | Media |
+**Sin deuda técnica crítica pendiente.**
 
-> **Resueltos** (gaps en la numeración): **D-3** (OTP helpers en `lib/utils.ts`) y **D-4** (RPCs `book_slot`/`confirm_appointment` en DB) → eliminados en commit `703bf3a` + migración `20260523100000_drop_legacy_otp_rpcs.sql`. **B-1** (race condition en `createScheduleException`) → estructuralmente cerrada por persistencia previa de la excepción; ver §6.7.
+Todos los hallazgos D-1 a D-12 del Ultra-Review fueron resueltos en la sesión 2026-05-23:
+
+| ID | Resolución | Migración / Commit |
+|---|---|---|
+| D-1 | Archivos duplicados `001_initial.sql` y `20260515000000_initial_schema.sql` eliminados del repo; entradas borradas de `supabase_migrations.schema_migrations` | D-1 cleanup + historial remoto |
+| D-2 | `lib/supabase/types.ts` regenerado vía `npm run db:types` | commit perf+debt |
+| D-3 | OTP helpers eliminados de `lib/utils.ts` | commit `703bf3a` |
+| D-4 | RPCs `book_slot` / `confirm_appointment` dropeadas de la DB | `20260523100000` |
+| D-5 | Enum `appointment_status` rebuildeado (solo `confirmed`/`cancelled`); types.ts regenerado | `20260523200000` |
+| D-6 | CHECK constraints `color` añadidos a `services` y `appointments` | `20260523300000` |
+| D-7 | `vercel.json` creado con cron schedule | commit perf+debt |
+| D-8 | Policy `public_read_clinics` añadida a migraciones (drift resuelto) | `20260523300000` |
+| D-9 | `fn_set_updated_at` + `fn_check_schedule_overlap` + `get_active_dow_for_service` con `search_path` fijado; `fn_handle_new_user` confirmado inexistente (no aplica) | `20260523200000` |
+| D-10 | `idx_appt_otp_expiry` dropeado; `adminCancelAppointment` y `bookAppointmentManual` usan session client | `20260523200000` + commit |
+| D-11 | `sanitizePhone` eliminó prefijo `+34` hardcodeado | commit perf+debt |
+| D-12 | `getBaseUrl()` elimina `PROD_FALLBACK`; lanza en Vercel sin vars de URL | commit perf+debt |
 
 ---
 
@@ -444,16 +468,12 @@ Reglas asociadas (no romper):
 |---|---|---|
 | Columna `reminder_sent BOOLEAN DEFAULT false` | `003_whatsapp_instant_booking.sql` | ✅ En BD |
 | `sendWhatsAppReminder()` | `lib/twilio/client.ts` | ✅ Listo |
-| `GET /api/cron/reminders` | `app/api/cron/reminders/route.ts` | ✅ Listo (secuencial — ver B-9) |
-| `vercel.json` | raíz del proyecto | ❌ No existe |
+| `GET /api/cron/reminders` | `app/api/cron/reminders/route.ts` | ✅ Listo (`Promise.allSettled` concurrente — B-9 resuelto) |
+| `vercel.json` | raíz del proyecto | ✅ Creado (D-7 resuelto) |
 
-**Cómo activar**:
-1. Crear `vercel.json`:
-   ```json
-   { "crons": [{ "path": "/api/cron/reminders", "schedule": "0 * * * *" }] }
-   ```
-2. Añadir `CRON_SECRET` en Vercel Dashboard → Settings → Environment Variables.
-3. Antes de activar: refactorizar el loop secuencial en `route.ts` a `Promise.allSettled` + batches (ver D-B9 en ultrareview).
+**Para activar** (solo falta esto):
+1. Añadir `CRON_SECRET` en Vercel Dashboard → Settings → Environment Variables.
+2. Hacer deploy — Vercel detectará `vercel.json` y registrará el cron automáticamente.
 
 ---
 
@@ -484,4 +504,7 @@ Reglas asociadas (no romper):
 | `38097a7` | feat: partial time blocks, multiple exceptions per day, no-store slots cache |
 | `5a8a9fa` | fix(security): critical RPC validation patches for cross-tenant isolation (S-1, S-2, S-3, S-4) |
 | `51c8733` | fix(security): application-layer patches (S-5 cookie, S-6/S-7 rate-limits, S-8 service-clinic check, S-9/S-10 webhook signing) |
-| `(HEAD)` | fix(agenda): resolve B-1 race condition by persisting exceptions prior to cancellation and purge dead OTP code |
+| `(B-1)` | fix(agenda): resolve B-1 race condition by persisting exceptions prior to cancellation and purge dead OTP code |
+| `(B2-B9)` | fix(logic): resolve B-2 to B-9 edge cases, cleanup enums, and enforce atomic RPC updates |
+| `(P+D)` | chore: resolve remaining performance and tech debt findings (P-1, P-5, P-6, D-1 to D-12) |
+| `(HEAD)` | docs: sync SSOT removing resolved tech debt and detailing CTE performance architecture |
