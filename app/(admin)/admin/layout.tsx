@@ -9,7 +9,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!user) redirect('/auth/login')
 
   const jar = await cookies()
-  const isGuest = jar.get(GUEST_COOKIE)?.value === '1'
+  const isGuest = jar.get(GUEST_COOKIE)?.value === '1' && user.email === 'admin@demo.com'
 
   return (
     <AdminShell clinicName={clinicName} userEmail={userEmail} isGuest={isGuest}>
