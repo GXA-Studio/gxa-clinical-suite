@@ -1,5 +1,6 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createDoctor, updateDoctor, toggleDoctor } from '@/app/(admin)/admin/doctors/actions'
 import { useGuestMode } from '@/components/admin/guest-mode-context'
 import { Button } from '@/components/ui/button'
@@ -27,11 +28,16 @@ interface ServiceOption { id: string; name: string }
 
 export function DoctorsClient({ doctors: initial, services }: { doctors: DoctorRow[]; services: ServiceOption[] }) {
   const { notifyDemo } = useGuestMode()
+  const router = useRouter()
   const [doctors,  setDoctors]  = useState(initial)
   const [open,     setOpen]     = useState(false)
   const [mode,     setMode]     = useState<'create' | 'edit'>('create')
   const [selected, setSelected] = useState<DoctorRow | null>(null)
   const [pending,  start]       = useTransition()
+
+  // Sync server-refreshed data into local state when the parent re-renders
+  // after router.refresh() resolves with new RSC payload.
+  useEffect(() => { setDoctors(initial) }, [initial])
 
   function openCreate() { setMode('create'); setSelected(null); setOpen(true) }
   function openEdit(d: DoctorRow) { setMode('edit'); setSelected(d); setOpen(true) }
@@ -48,6 +54,7 @@ export function DoctorsClient({ doctors: initial, services }: { doctors: DoctorR
       }
       toast({ variant: 'success', title: mode === 'create' ? 'Médico creado' : 'Médico actualizado' })
       setOpen(false)
+      router.refresh()
     })
   }
 
