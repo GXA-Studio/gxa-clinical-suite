@@ -95,7 +95,7 @@ export function NewAppointmentDialog({
   const [patientName,  setPatientName]  = useState('')
   const [patientPhone, setPatientPhone] = useState('')
   // doctorId can be '' | 'any' | <uuid>
-  const [doctorId,     setDoctorId]     = useState('')
+  const [doctorId,     setDoctorId]     = useState('any')
   const [serviceId,    setServiceId]    = useState('')
   const [date,         setDate]         = useState(todayLocalDate())
   const [slotStart,    setSlotStart]    = useState('')
@@ -219,7 +219,7 @@ export function NewAppointmentDialog({
   function resetForm() {
     setPatientName('')
     setPatientPhone('')
-    setDoctorId('')
+    setDoctorId('any')
     setServiceId('')
     setDate(todayLocalDate())
     setSlotStart('')
