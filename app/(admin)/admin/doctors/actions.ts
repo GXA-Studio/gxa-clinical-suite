@@ -28,6 +28,38 @@ async function getClinicContext(supabase: Awaited<ReturnType<typeof createClient
   }
 }
 
+// S-8 PATCH: verify every service_id belongs to the admin's clinic before
+// linking them via doctor_services. The RLS policy on doctor_services only
+// checks ownership through doctor_id; without this app-side guard an admin
+// could craft a request linking their doctor to ANOTHER clinic's services.
+// Returns `null` on success, or an error string on tenant violation.
+async function assertServicesBelongToClinic(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  clinicId: string,
+  rawServiceIds: string[],
+): Promise<{ uniqueIds: string[] } | { error: string }> {
+  const uniqueIds = [...new Set(rawServiceIds)]
+  if (uniqueIds.length === 0) return { uniqueIds: [] }
+  if (uniqueIds.some((id) => !UUID_RE.test(id))) {
+    return { error: 'Servicio inválido.' }
+  }
+
+  const { data: validRows, error } = await supabase
+    .from('services')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .in('id', uniqueIds)
+
+  if (error) {
+    console.error('[assertServicesBelongToClinic] DB error:', error)
+    return { error: 'Error al validar los servicios.' }
+  }
+  if ((validRows?.length ?? 0) !== uniqueIds.length) {
+    return { error: 'CROSS_TENANT_VIOLATION: uno o más servicios no pertenecen a tu clínica.' }
+  }
+  return { uniqueIds }
+}
+
 export async function createDoctor(formData: FormData) {
   if (await isGuestMode()) return DEMO_RESULT
   const raw = Object.fromEntries(formData)
@@ -36,6 +68,12 @@ export async function createDoctor(formData: FormData) {
 
   const supabase = await createClient()
   const { clinicId, clinicSlug } = await getClinicContext(supabase)
+
+  // S-8: validate service ownership BEFORE creating the doctor so we don't
+  // leave an orphan doctor row on tenant-violation.
+  const rawServiceIds = formData.getAll('service_ids').map(String)
+  const assertion = await assertServicesBelongToClinic(supabase, clinicId, rawServiceIds)
+  if ('error' in assertion) return { error: assertion.error }
 
   const { data: doctor, error } = await supabase
     .from('doctors')
@@ -47,10 +85,9 @@ export async function createDoctor(formData: FormData) {
     return { error: 'Error al guardar el médico.' }
   }
 
-  const serviceIds = formData.getAll('service_ids').map(String)
-  if (serviceIds.length) {
+  if (assertion.uniqueIds.length) {
     await supabase.from('doctor_services').insert(
-      serviceIds.map((sid) => ({ doctor_id: doctor.id, service_id: sid }))
+      assertion.uniqueIds.map((sid) => ({ doctor_id: doctor.id, service_id: sid }))
     )
   }
 
@@ -70,6 +107,12 @@ export async function updateDoctor(id: string, formData: FormData) {
   const supabase = await createClient()
   const { clinicId, clinicSlug } = await getClinicContext(supabase)
 
+  // S-8: validate service ownership BEFORE mutating doctor_services so we
+  // don't blank out the existing links on a tenant-violation request.
+  const rawServiceIds = formData.getAll('service_ids').map(String)
+  const assertion = await assertServicesBelongToClinic(supabase, clinicId, rawServiceIds)
+  if ('error' in assertion) return { error: assertion.error }
+
   const { error } = await supabase.from('doctors')
     .update({ ...parsed.data, email: parsed.data.email || null })
     .eq('id', id).eq('clinic_id', clinicId)
@@ -79,10 +122,9 @@ export async function updateDoctor(id: string, formData: FormData) {
   }
 
   await supabase.from('doctor_services').delete().eq('doctor_id', id)
-  const serviceIds = formData.getAll('service_ids').map(String)
-  if (serviceIds.length) {
+  if (assertion.uniqueIds.length) {
     await supabase.from('doctor_services').insert(
-      serviceIds.map((sid) => ({ doctor_id: id, service_id: sid }))
+      assertion.uniqueIds.map((sid) => ({ doctor_id: id, service_id: sid }))
     )
   }
 

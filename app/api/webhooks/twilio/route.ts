@@ -1,6 +1,17 @@
 import { type NextRequest } from 'next/server'
 import { validateRequest } from 'twilio'
 
+// S-10 PATCH: reconstruct the public URL from the forwarded headers Vercel
+// injects, instead of trusting NEXT_PUBLIC_APP_URL. Twilio signs with the
+// EXACT URL it called, so on preview deploys (*.vercel.app) the static env
+// var diverges from the actual host and the signature check always fails.
+// Mirrors the pattern already used by /api/webhooks/whatsapp.
+function buildWebhookUrl(req: NextRequest): string {
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https'
+  const host  = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
+  return `${proto}://${host}/api/webhooks/twilio`
+}
+
 // POST /api/webhooks/twilio
 //
 // Handles Twilio status callback webhooks (MessageStatus updates: sent, delivered, failed).
@@ -10,15 +21,14 @@ import { validateRequest } from 'twilio'
 // Any request that fails validation is rejected with 403.
 export async function POST(req: NextRequest) {
   const authToken = process.env.TWILIO_AUTH_TOKEN
-  const appUrl    = process.env.NEXT_PUBLIC_APP_URL
 
-  if (!authToken || !appUrl) {
-    console.error('[webhooks/twilio] Missing TWILIO_AUTH_TOKEN or NEXT_PUBLIC_APP_URL')
+  if (!authToken) {
+    console.error('[webhooks/twilio] Missing TWILIO_AUTH_TOKEN')
     return new Response('Misconfigured', { status: 500 })
   }
 
   const signature  = req.headers.get('x-twilio-signature') ?? ''
-  const webhookUrl = `${appUrl}/api/webhooks/twilio`
+  const webhookUrl = buildWebhookUrl(req)
 
   // Twilio sends application/x-www-form-urlencoded
   let params: Record<string, string> = {}

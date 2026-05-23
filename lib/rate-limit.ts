@@ -36,3 +36,14 @@ export const leadsIpLimiter = new Ratelimit({
   analytics: true,
   prefix: '@mbb/leads:ip',
 })
+
+// S-6 PATCH: /admin/guest auto-login uses hardcoded demo credentials. Without
+// rate-limiting, a script could flood Supabase Auth with sign-in calls,
+// exhausting the project quota. 5 demo sessions per minute per IP is enough
+// for legitimate sales walkthroughs and shuts the door on abuse.
+export const demoLimiter = new Ratelimit({
+  redis: getRedis(),
+  limiter: Ratelimit.slidingWindow(5, '1 m'),
+  analytics: true,
+  prefix: '@mbb/demo:ip',
+})

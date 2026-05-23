@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { validateRequest } from 'twilio'
 import twilio from 'twilio'
 import { createServiceClient } from '@/lib/supabase/server'
+import { sendCancellationWhatsApp } from '@/lib/twilio/client'
 
 const CANCEL_KEYWORDS  = ['cancelar', 'anular', 'baja', 'cancel']
 const MODIFY_KEYWORDS  = ['modificar', 'cambiar', 'reprogramar', 'mover', 'reschedule', 'cambio', 'reagendar']
@@ -101,9 +102,13 @@ export async function POST(req: NextRequest) {
   } else if (hasCancel) {
     const supabase = createServiceClient()
 
+    // S-9 PATCH: select strictly the most imminent confirmed future
+    // appointment for this phone (ASC + limit 1) and pull the clinic
+    // context needed by sendCancellationWhatsApp so the patient gets a
+    // formal outbound confirmation in addition to the inline TwiML reply.
     const { data: appt } = await supabase
       .from('appointments')
-      .select('id, starts_at')
+      .select('id, patient_name, patient_phone, starts_at, clinics(name, timezone)')
       .eq('patient_phone', phone)
       .eq('status', 'confirmed')
       .gt('starts_at', new Date().toISOString())
@@ -117,15 +122,34 @@ export async function POST(req: NextRequest) {
         'Si crees que es un error, contacta directamente con tu clínica.'
       )
     } else {
+      // Defence-in-depth: include `status='confirmed'` in the UPDATE predicate
+      // so two simultaneous "cancelar" messages can't double-cancel.
       const { error } = await supabase
         .from('appointments')
         .update({ status: 'cancelled' })
         .eq('id', appt.id)
+        .eq('status', 'confirmed')
 
       if (error) {
         console.error('[webhooks/whatsapp] Cancel error:', error)
         twiml.message('Ha ocurrido un error al cancelar tu cita. Por favor, inténtalo de nuevo o contacta con la clínica.')
       } else {
+        // S-9: fire the canonical outbound confirmation. Mirrors what the
+        // /manage/[token] and admin cancel paths do, so all cancel flows
+        // produce the same formal Twilio message with the formatted date.
+        const clinic = (Array.isArray(appt.clinics) ? appt.clinics[0] : appt.clinics) as
+          { name: string; timezone: string } | null
+        try {
+          await sendCancellationWhatsApp({
+            to:          appt.patient_phone as string,
+            patientName: appt.patient_name as string,
+            clinicName:  clinic?.name ?? 'la clínica',
+            startsAt:    appt.starts_at as string,
+            timezone:    clinic?.timezone ?? 'Europe/Madrid',
+          })
+        } catch (err) {
+          console.error('[webhooks/whatsapp] sendCancellationWhatsApp failed:', err)
+        }
         twiml.message('✅ Cita anulada correctamente. El hueco ya está libre. ¡Hasta pronto!')
       }
     }
