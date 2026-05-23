@@ -1,6 +1,7 @@
-# PROJECT STATE — Medical Booking Boilerplate
-> **Single source of truth** for all future sessions.  
-> Last updated: **2026-05-20** — Renderizado visual de excepciones en agenda y cancelación automática de citas en conflicto.
+# PROJECT STATE — Medical Booking Boilerplate · Pipeline Técnico
+> **Single source of truth técnico** para todas las sesiones futuras.  
+> Última actualización: **2026-05-23** — Ultra-Review audit + critical security patches (S-1–S-10), B-1 race-condition fix en `createScheduleException`, y purga de RPCs OTP legacy (`book_slot`, `confirm_appointment`).  
+> Para perspectiva de producto y flujos funcionales, ver **`CLINIC_PRODUCT_STATE.md`**.
 
 ---
 
@@ -10,501 +11,449 @@
 |---|---|---|
 | Framework | Next.js 15 (App Router) | TypeScript strict, React 19 |
 | Base de datos | Supabase (PostgreSQL 15+) | Auth + DB + RLS + SECURITY DEFINER RPCs |
-| Hosting | Vercel | Serverless Edge/Node.js Route Handlers |
-| Mensajería | Twilio WhatsApp Sandbox | `whatsapp:+14155238886` — reemplazar por número aprobado en prod |
+| Hosting | Vercel | Serverless Edge/Node.js Route Handlers; `after()` para tareas deferidas |
+| Mensajería saliente | Twilio WhatsApp | Sandbox: `whatsapp:+14155238886` — reemplazar por número aprobado en prod |
+| Mensajería entrante | Twilio Webhook | `POST /api/webhooks/whatsapp` — IA conversacional (cancelar / modificar / info) |
+| Status callbacks | Twilio Webhook | `POST /api/webhooks/twilio` — observabilidad de entregabilidad |
+| Email transaccional | Nodemailer + Gmail App Password | Solo para leads internos GXA Studio |
 | UI | shadcn/ui + Tailwind CSS | framer-motion para animaciones de pasos |
-| Cache / Rate-limit | Upstash Redis | 2 limiters activos: booking-ip, slots-ip |
-| Validación | Zod | En todos los Route Handlers públicos |
-| Fechas | date-fns v4 + date-fns-tz | `date-fns` para aritmética frontend; `date-fns-tz` disponible pero NO usado en paginación |
+| Cache / Rate-limit | Upstash Redis | 4 limiters activos — ver §4 |
+| Validación | Zod | Todos los Route Handlers públicos + Server Actions |
+| Fechas | date-fns v4 + date-fns-tz | `date-fns` para aritmética; `date-fns-tz` para conversión IANA (DST-safe) |
 
 ---
 
-## 2. Flujos Principales (MVP Premium Completado)
+## 2. Base de Datos — Esquema Completo
 
-### 2.1 Reserva de Pacientes — Fricción Cero
-
-El flujo de reserva para el paciente no requiere cuenta ni registro. Opera enteramente mediante RPCs con `SECURITY DEFINER`.
-
-**Ruta**: `POST /api/book`  
-**RPC**: `book_slot_confirmed(clinic_id, doctor_id, service_id, patient_name, patient_phone, starts_at)`
+### 2.1 Tablas
 
 ```
-Paciente → selecciona servicio / médico / franja horaria / datos personales
-        → POST /api/book (validado con Zod + rate-limit IP)
-        → RPC book_slot_confirmed (INSERT status='confirmed', atomic)
-        → sendWhatsAppConfirmation (WhatsApp con link de autogestión)
-        → appointmentId devuelto al frontend → pantalla de éxito
+clinics
+  id              UUID PK
+  name            TEXT NOT NULL
+  slug            TEXT UNIQUE NOT NULL          -- URL pública de la clínica
+  timezone        TEXT NOT NULL DEFAULT 'Europe/Madrid'
+  phone           TEXT
+  address         TEXT
+  settings        JSONB
+  legal_name      TEXT NULLABLE                 -- Razón social oficial (RGPD art.13)
+  cif             TEXT NULLABLE                 -- NIF / CIF (RGPD art.13)
+  updated_at      TIMESTAMPTZ
+
+profiles
+  id              UUID PK → auth.users(id)      -- 1:1 con auth.users
+  clinic_id       UUID → clinics(id)
+  full_name       TEXT
+  role            TEXT CHECK IN ('admin','staff')
+  created_at      TIMESTAMPTZ
+
+services
+  id              UUID PK
+  clinic_id       UUID → clinics(id)
+  name            TEXT NOT NULL
+  duration_minutes INTEGER NOT NULL
+  price           NUMERIC
+  is_active       BOOLEAN DEFAULT true
+  color           TEXT NOT NULL DEFAULT 'blue'   -- blue|emerald|purple|amber|rose
+
+doctors
+  id              UUID PK
+  clinic_id       UUID → clinics(id)
+  name            TEXT NOT NULL
+  email           TEXT
+  specialty       TEXT
+  avatar_url      TEXT
+  is_active       BOOLEAN DEFAULT true
+
+doctor_services
+  doctor_id       UUID → doctors(id) ON DELETE CASCADE
+  service_id      UUID → services(id) ON DELETE CASCADE
+  PRIMARY KEY (doctor_id, service_id)
+
+insurances
+  id              UUID PK
+  name            TEXT UNIQUE NOT NULL           -- Privado, Adeslas, Sanitas, Mapfre, Asisa, DKV, Allianz
+  logo_url        TEXT
+  created_at      TIMESTAMPTZ
+  RLS: public read (ins_public_read)
+
+doctor_insurances
+  doctor_id       UUID → doctors(id) ON DELETE CASCADE
+  insurance_id    UUID → insurances(id) ON DELETE CASCADE
+  PRIMARY KEY (doctor_id, insurance_id)
+  RLS: public read (di_public_read)
+
+schedules
+  id              UUID PK
+  doctor_id       UUID → doctors(id)
+  day_of_week     SMALLINT 0-6 (0=dom)
+  start_time      TIME NOT NULL
+  end_time        TIME NOT NULL
+  is_active       BOOLEAN DEFAULT true
+  UNIQUE (doctor_id, day_of_week, start_time, end_time)
+
+doctor_schedule_exceptions
+  id              UUID PK
+  doctor_id       UUID → doctors(id)
+  exception_date  DATE NOT NULL
+  is_working      BOOLEAN NOT NULL
+  start_time      TIME NULLABLE
+  end_time        TIME NULLABLE
+  UNIQUE INDEX partial on (doctor_id, date, is_working, COALESCE(start_time,'00:00'), COALESCE(end_time,'00:00'))
+  CHECK 3 formas válidas:
+    (is_working=false, hours NULL)           → Día Completo Libre
+    (is_working=false, hours NOT NULL)       → Bloqueo Parcial
+    (is_working=true,  hours NOT NULL)       → Ventana Custom (legacy)
+
+appointments
+  id                  UUID PK
+  clinic_id           UUID → clinics(id)
+  doctor_id           UUID → doctors(id)
+  service_id          UUID → services(id)
+  patient_name        TEXT NOT NULL
+  patient_phone       TEXT NOT NULL
+  starts_at           TIMESTAMPTZ NOT NULL
+  ends_at             TIMESTAMPTZ NOT NULL
+  status              TEXT CHECK IN ('confirmed','cancelled')   -- 'pending' eliminado
+  cancellation_token  UUID UNIQUE DEFAULT gen_random_uuid()
+  reminder_sent       BOOLEAN NOT NULL DEFAULT false
+  notes               TEXT
+  color               TEXT NULLABLE                             -- override por cita; NULL = hereda services.color
+  EXCLUDE USING gist (doctor_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&)
+    WHERE (status <> 'cancelled')                              -- anti-colisión atómica
+
+marketing_leads                                                -- DOMINIO GXA STUDIO (no clínica)
+  id          UUID PK
+  created_at  TIMESTAMPTZ
+  name        TEXT NOT NULL
+  email       TEXT NOT NULL
+  clinic      TEXT NOT NULL         -- texto libre "Clínica X — Valencia"
+  message     TEXT
+  source      TEXT NOT NULL DEFAULT 'landing'
+  ip          TEXT
+  user_agent  TEXT
+  status      TEXT CHECK IN ('new','contacted','demo_scheduled','closed_won','closed_lost','spam')
+  notes       TEXT
+  RLS: deny-by-default (no policies). Acceso solo vía service_role.
 ```
 
-**Anti-colisión**: la tabla `appointments` tiene una constraint `EXCLUDE USING gist (doctor_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status <> 'cancelled')`. PostgreSQL rechaza un INSERT con `exclusion_violation (23P01)`, capturado por la RPC como `SLOT_TAKEN (P0001)`.
-
-
-**Componentes del wizard** (`components/booking/`):  
-`booking-wizard.tsx` → `step-service.tsx` → `step-doctor-pre.tsx` → `step-slot.tsx` → `[step-doctor.tsx opcional]` → `step-patient.tsx` → `step-confirmed.tsx`
+**Columnas eliminadas de `appointments`**: `otp_code_hash`, `otp_expires_at` (migration `20260516_remove_pending_status.sql`).  
+**`clinics.admin_id` NO EXISTE** en la DB — el `lib/supabase/types.ts` lo lista erróneamente (schema drift pendiente de corregir).
 
 ---
 
-### 2.2 Notificaciones Automáticas (Twilio WhatsApp)
+### 2.2 Índices
 
-Todas las funciones están en `lib/twilio/client.ts` y usan `await` estricto (Vercel Node.js runtime).
-
-| Evento | Función | Disparado desde |
-|---|---|---|
-| Reserva confirmada | `sendWhatsAppConfirmation` | `POST /api/book`, `bookAppointmentManual` (admin) |
-| Cancelación por paciente | `sendCancellationWhatsApp` | `cancelByToken` (server action) |
-| Reprogramación por paciente | `sendRescheduleWhatsApp` | `rescheduleAppointment` (server action) |
-| Recordatorio 24h | `sendWhatsAppReminder` | `GET /api/cron/reminders` (en stand-by — ver §5) |
-
-El mensaje de confirmación incluye siempre el link de autogestión: `{baseUrl}/manage/{cancellation_token}`.
-
----
-
-### 2.3 Portal del Paciente — Autogestión
-
-**Ruta**: `/manage/[token]`  
-El token es un UUID único generado por defecto en `appointments.cancellation_token`.
-
-```
-Paciente accede a su link de autogestión
-  ├── Cita activa y futura → botones Cancelar / Reprogramar
-  ├── Cita pasada          → vista de solo lectura
-  └── Cita cancelada       → estado informativo
-```
-
-**Server Actions** (`app/manage/[token]/actions.ts`):
-
-- `cancelByToken(token)` — actualiza `status='cancelled'` solo si `status='confirmed'` y `starts_at > now()`. Envía `sendCancellationWhatsApp`. Usa `createServiceClient()` (service role, bypassa RLS).
-- `rescheduleAppointment(token, newDoctorId, newStartsAt)` — llama a la RPC `reschedule_appointment` que valida colisiones con el mismo EXCLUDE constraint. Envía `sendRescheduleWhatsApp`.
-
----
-
-## 3. Admin Panel (Actualizado)
-
-### Acceso y Layout
-
-- **Login**: `/auth/login` con Supabase Auth (email + password).
-- **Redirect**: `/admin` redirige a `/admin/appointments` (dashboard eliminado).
-- **Shell**: `AdminShell` (`components/admin/admin-shell.tsx`) — sidebar fijo en desktop, drawer con overlay en móvil.
-- **Sidebar**: `components/admin/sidebar.tsx` — navegación: Citas, Médicos, Servicios, Horarios.
-
-### Pantallas del Panel
-
-| Pantalla | Ruta | Componente clave |
-|---|---|---|
-| Citas | `/admin/appointments` | `AppointmentsTable` + `NewAppointmentDialog` |
-| Médicos | `/admin/doctors` | `DoctorsClient` |
-| Servicios | `/admin/services` | `ServicesClient` |
-| Horarios | `/admin/schedules` | `ScheduleEditor` |
-
-### Vista de Citas — Diseño Responsive
-
-La vista en `/admin/appointments` es mobile-first:
-- **< md**: tarjetas apiladas con icono de estado, doctor, fecha y botón de cancelar.
-- **≥ md**: tabla con columnas Paciente / Médico·Servicio / Fecha·Hora / Estado / Acciones.
-- **Stats strip**: 4 contadores (Total / Pendientes / Confirmadas / Canceladas).
-- **Filtros**: selector de estado + input de fecha, con botón "Limpiar filtros".
-
-### Búsqueda Global de Citas
-
-La tabla de citas en `/admin/appointments` dispone de un buscador server-side que filtra por nombre de paciente o teléfono.
-
-- **UI**: `<Input type="search">` con icono lupa (`Search` de lucide), ancho completo, encima de los filtros de estado/fecha existentes.
-- **Debounce**: 300 ms con `useRef` + `clearTimeout` — no se dispara una petición por cada tecla pulsada.
-- **URL state**: el término se persiste en `?q=` via `router.push()`, igual que `?status=` y `?date=`. El estado sobrevive a recargas y es compartible.
-- **Supabase query**: `AppointmentsSection` (Server Component) lee `q` de `searchParams` y aplica `.or('patient_name.ilike.%term%,patient_phone.ilike.%term%')` como cláusula `AND` adicional sobre el `clinic_id` ya filtrado. El término se sanitiza (trim + 100 chars + strip `,()`) antes de pasarlo al query builder de PostgREST.
-- **Stats**: los contadores Total / Confirmadas / Canceladas reflejan el subconjunto devuelto por la búsqueda.
-- **"Limpiar filtros"**: el botón también limpia el campo de búsqueda y el param `q`.
-
-### Creación Manual de Citas (Staff → Paciente)
-
-El staff puede crear citas telefónicamente desde `/admin/appointments` sin que el paciente tenga que pasar por el wizard.
-
-**Botón**: "Nueva cita" (esquina superior derecha del encabezado de la página).
-
-**Flujo del dialog** (`components/admin/new-appointment-dialog.tsx`):
-1. Nombre del paciente + teléfono en formato E.164.
-2. Selector de médico (carga médicos activos de la clínica).
-3. Selector de servicio (filtrado automáticamente a los servicios del médico seleccionado).
-4. Selector de fecha (input `date`, mínimo = hoy).
-5. Horarios disponibles (fetch live a `GET /api/slots?doctorId=...&serviceId=...&date=...`).
-6. Resumen visual de la cita seleccionada antes de confirmar.
-
-**Server Action** (`bookAppointmentManual` en `app/(admin)/admin/appointments/actions.ts`):
-- Valida nombre, teléfono E.164, UUIDs y que `startsAt` sea futuro.
-- Obtiene `clinic_id` del perfil autenticado del admin.
-- Llama a `book_slot_confirmed` via `createServiceClient()` — misma RPC que usa el flujo de pacientes; el EXCLUDE constraint sigue siendo la red de seguridad contra colisiones.
-- Envía `sendWhatsAppConfirmation` al paciente con su link de autogestión.
-- Hace `revalidatePath('/admin/appointments')` para refrescar la tabla.
-
-**Regla de oro**: cualquier cita creada por el admin es indistinguible de una creada por el paciente. El paciente recibe el mismo WhatsApp de confirmación y tiene el mismo portal `/manage/[token]` para gestionar su cita.
-
-**Smart Forwarding (Dead-End Prevention)**: cuando el día seleccionado no tiene ningún hueco disponible, el diálogo muestra un empty state con el botón "Buscar próximo hueco libre". Al pulsarlo, se ejecuta la Server Action `findNextAvailableDate` (`app/(booking)/[clinicSlug]/actions.ts`) que escanea día a día en Supabase (sin pasar por `/api/slots` ni tocar el rate-limiter de Redis) hasta encontrar el primer día con disponibilidad (límite 45 días). Si hay médico seleccionado, busca sólo sus huecos (`get_available_slots`); si no hay médico (modo "cualquier profesional"), evalúa toda la clínica (`get_slots_for_service`). Al encontrar la fecha, `setDate(found)` actualiza el input de fecha, los efectos existentes limpian y re-fetean los slots automáticamente. Si no hay disponibilidad en 45 días se muestra un mensaje de fallback. La misma Server Action se reutiliza desde el flujo público de pacientes (`WeeklyGrid`).
-
-### Sistema de Colores de Citas (Agenda)
-
-Las tarjetas de cita en `/admin/agenda` (`DailyResourceGrid`) soportan categorización visual por color para que recepción identifique flujos de trabajo de un vistazo.
-
-**Herencia cromática** (prioridad de mayor a menor):
-1. `appointments.color` — override por cita individual (nullable; `null` = heredar del servicio)
-2. `services.color` — color base del tipo de servicio (NOT NULL, DEFAULT `'blue'`)
-3. `'blue'` — fallback final en el cliente
-
-**Colores válidos**: `'blue' | 'emerald' | 'purple' | 'amber' | 'rose'`. Las citas pasadas siempre muestran gris (`slate`) independientemente del color asignado.
-
-**Arquitectura**:
-- `lib/constants/colors.ts` — diccionario estático `APPOINTMENT_COLORS` (bg, border, text, textSub, hover), `COLOR_SWATCHES` y `COLOR_LABELS`.
-- `adminUpdateAppointmentColor(id, color)` — server action en `agenda/actions.ts`; guarda solo el campo `appointments.color`, revalida `/admin/agenda`.
-- `ServiceSchema` (`services/actions.ts`) incluye `color: z.enum([...]).default('blue')`.
-
-**UX**:
-- `EditAppointmentDialog` — picker de 5 puntos circulares en la vista de detalles, **separado del flujo de Reprogramar**. Disparo instantáneo con `useTransition`: actualización óptica + rollback si la action falla.
-- `ServicesClient` — picker con etiquetas pill en el formulario de servicio; columna "Color" con pastilla coloreada en la tabla.
-
-**Repintado reactivo de la agenda**: `createService`, `updateService` y `toggleService` invalidan tanto `/admin/services` como `/admin/agenda`. Al cambiar el color por defecto de un servicio, las citas que heredan ese color (sin `appointments.color` propio) se repintan al instante en la agenda.
-
-**DB** (migración `20260520000000_add_color_columns.sql`):
-```sql
-ALTER TABLE services     ADD COLUMN IF NOT EXISTS color text NOT NULL DEFAULT 'blue';
-ALTER TABLE appointments ADD COLUMN IF NOT EXISTS color text;
-```
-
-### Sistema de Toasts (Notificaciones)
-
-`hooks/use-toast.ts` + `components/ui/toaster.tsx` — toaster propio (sin Radix) con auto-dismiss.
-
-- **Duración por defecto**: 3500 ms. Los toasts desaparecen solos sin requerir click.
-- **Override por toast**: `toast({ ..., duration: 6000 })` permite tiempo personalizado. `duration: 0` desactiva el auto-dismiss (sticky).
-- **Constante**: `DEFAULT_TOAST_DURATION` en `use-toast.ts`.
-
-### Horarios — Gestión, Bloqueos y Excepciones
-
-La pantalla `/admin/schedules` permite configurar el horario semanal recurrente y añadir excepciones puntuales que **restan disponibilidad** del horario semanal.
-
-**Componente**: `components/admin/schedule-editor.tsx` (Client). Recibe doctores con `schedules` y `exceptions` precargados desde el Server Component.
-
-**Layout**:
-- Tabs de médicos en la parte superior.
-- **Horario semanal**: lista de los 7 días (Lun → Dom), cada uno con sus turnos como pills `08:00–14:00` con switch y botón eliminar.
-- **Días Específicos / Excepciones**: tarjeta separada. El dialog "Añadir excepción" ofrece dos modos seleccionables como tarjetas grandes:
-  - **Día Completo Libre** (icon `CalendarOff`, rosa): bloquea el día entero.
-  - **Bloqueo Horario Parcial** (icon `Ban`, ámbar): bloquea solo la franja indicada (`start_time`–`end_time`).
-
-  La lista de excepciones diferencia ambos tipos visualmente (chip rosa para día completo, ámbar para bloqueo parcial) e indica el tramo bloqueado.
-
-**Modelo de datos**: cada excepción es una "resta" de disponibilidad. Se permiten **múltiples filas por fecha** (varios bloqueos en el mismo día — mañana + tarde, por ejemplo).
-
-**Optimistic UI**: `useOptimistic` + `useTransition` para toggles y deletes. La UI reacciona al instante.
-
-**Server Actions** (`app/(admin)/admin/schedules/actions.ts`):
-| Acción | Función |
-|---|---|
-| Crear turno semanal | `createSchedule(formData)` |
-| Activar/desactivar turno | `toggleSchedule(id, isActive)` |
-| Eliminar turno | `deleteSchedule(id)` |
-| Verificar citas en conflicto | `checkExceptionConflicts(input)` → `{ conflicts, totalCount }` |
-| Crear excepción (full-day o partial) | `createScheduleException(input, { cancelOverlapping?: boolean })` |
-| Eliminar excepción | `deleteScheduleException(id)` |
-
-Todas las server actions invocan `bustSlotCaches(clinicSlug)` que: `revalidatePath('/admin/{schedules,agenda,appointments}')`, `revalidatePath('/{clinicSlug}')` y `invalidateBookingCache(clinicSlug)` (Upstash). Esto garantiza que tanto el calendario público como la agenda admin se repinten al instante tras un bloqueo.
-
-**Reglas de excepciones**:
-- **Sin** `UNIQUE(doctor_id, exception_date)` — múltiples filas por día permitidas.
-- Unique index parcial sobre `(doctor_id, exception_date, is_working, COALESCE(start_time, '00:00'), COALESCE(end_time, '00:00'))` para prevenir filas literalmente duplicadas.
-- CHECK constraint a nivel DB acepta 3 formas:
-  - `is_working=false, start_time=NULL, end_time=NULL` → Día Completo Libre
-  - `is_working=false, start_time NOT NULL, end_time NOT NULL, start<end` → Bloqueo Parcial
-  - `is_working=true, start_time NOT NULL, end_time NOT NULL, start<end` → ventana custom (legacy)
-- No se permiten excepciones para fechas pasadas (validado en la server action).
-
-**Integración en las RPCs**: ver §8.4 — `get_available_slots` y `get_slots_for_service` aplican: (1) si existe **un solo** row "Día Completo Libre" → 0 slots; (2) si existen rows `is_working=true` → usarlas como ventanas en lugar del horario semanal (legacy); (3) los slots generados se filtran excluyendo cualquiera cuyo `[start, end)` solape con un bloqueo parcial.
-
-### Renderizado visual de excepciones en la agenda
-
-`/admin/agenda` (`daily-resource-grid.tsx`) pinta las excepciones del día como overlays rallados sobre la columna del médico afectado.
-
-**Fetching**: el Server Component de la agenda (`agenda/page.tsx`) consulta `doctor_schedule_exceptions` en paralelo con los demás recursos (un `Promise.all` con schedules, appointments, services, exceptions) filtrando por `exception_date = date` y los doctores activos.
-
-**Estilo de stripes** (definido inline en `daily-resource-grid.tsx`, no en Tailwind para evitar purge):
-
-```ts
-const FULL_DAY_BG = 'rgba(244, 63, 94, 0.45)'   // rose-500 @ 45%
-const PARTIAL_BG  = 'rgba(245, 158, 11, 0.45)'  // amber-500 @ 45%
-const stripedBackground = (base) => ({
-  backgroundColor: base,
-  backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.45), rgba(255,255,255,0.45) 8px, transparent 8px, transparent 16px)',
-})
-```
-
-**Z-index layering** (de abajo a arriba):
-1. Background cells (z-0)
-2. Overlays de excepciones (`z-[5]`, `pointer-events-none`) — los clicks pasan a través
-3. Tarjetas de cita (`z-10`) — siguen siendo clicables aun encima de un bloqueo
-
-**Tipos de overlay**:
-- **Día completo libre**: cuadro rojo rallado cubriendo `totalGridHeight - 4`, con chip rotado `-15deg` con texto "Día No Disponible".
-- **Bloqueo parcial**: cuadro ámbar rallado posicionado por `start_time`/`end_time`, etiquetado "Bloqueo Horario" + rango monospace.
-
-**Click-prevention**: `isSlotWorking(slotIndex, blocks, exceptions)` ahora recibe las excepciones del médico. Si `fullDay=true` devuelve `false` para todo el día. Si hay `partials`, verifica overlap entre `[slotStart, slotEnd)` y `[block.start, block.end)`. Resultado: las celdas dentro de un bloqueo **no son clicables** — el admin no puede crear citas sobre franjas bloqueadas.
-
-### Flujo de conflictos al crear excepciones
-
-Cuando el admin guarda una excepción que solapa con citas confirmadas, el sistema interrumpe con un `AlertDialog` (shadcn/ui) **antes** de persistir.
-
-**Pipeline** (`schedule-editor.tsx` + `actions.ts`):
-1. Submit en el dialog "Nueva excepción" → `handleSaveException` construye el `ExceptionInput`.
-2. Llamada a **`checkExceptionConflicts(input)`** — devuelve `{ conflicts: ConflictAppointment[], totalCount }`.
-   - Calcula la ventana UTC con `fromZonedTime(date-fns-tz)` (DST-safe).
-   - Para `full-day`: ventana = `[date 00:00:00, date 23:59:59.999]` clinic-local.
-   - Para `partial`: ventana = `[date + start_time, date + end_time]` clinic-local.
-   - Predicate PostgREST: `starts_at < window_end AND ends_at > window_start`.
-3. Si `totalCount === 0` → `persistException` directamente.
-4. Si `totalCount > 0` → abre `AlertDialog` con título "Atención: Hay citas programadas", lista de pacientes afectados (nombre/teléfono/hora) en scroll, botones "Cancelar" / "Sí, cancelar citas y bloquear".
-5. Al confirmar → `createScheduleException(input, { cancelOverlapping: true })`.
-
-**Cancelación automática + Twilio** (`cancelOverlappingAppointments`):
-- Bulk UPDATE `status='cancelled'` vía `createServiceClient()` (bypassa RLS) con el mismo predicate de overlap.
-- WhatsApp diferido con `after()` de Next 15 + `Promise.allSettled` — el response vuelve al instante; fallos individuales se loguean sin abortar el resto. La función Vercel sigue viva hasta que todos los envíos resuelven.
-- El toast final del admin incluye `${cancelledCount} cita(s) cancelada(s) y avisadas por WhatsApp` cuando aplica.
-
----
-
-## 4. Seguridad y Legal (Auditado)
-
-### Rate Limiting (Upstash Redis)
-
-| Limiter | Prefijo | Ventana | Límite |
+| Índice | Tabla | Columnas | Estado |
 |---|---|---|---|
-| Booking por IP | `@mbb/booking:ip` | 1 h sliding | 10 por IP |
-| Slot lookup | `@mbb/slots:ip` | 1 min sliding | 60 por IP |
-
-Todos los limiters fallan abiertos (`fail open`) si Redis no está disponible, para no bloquear usuarios en caso de caída del cache.
-
-### Validaciones de Seguridad
-
-- **UUID validation**: regex `/^[0-9a-f]{8}-[0-9a-f]{4}…$/i` antes de cualquier query a la BD.
-- **Phone sanitization**: solo formato E.164 (`/^\+[1-9]\d{7,14}$/`).
-- **Name sanitization**: strip de caracteres de control para prevenir SMS injection.
-- **`server-only`**: importado en todos los módulos de servidor para prevenir fugas al bundle del cliente.
-- **RLS**: Row Level Security activo — admin solo opera sobre su `clinic_id`.
-- **SECURITY DEFINER RPCs**: `book_slot_confirmed`, `get_available_slots`, `reschedule_appointment` — ejecutan con permisos elevados desde el rol anon.
-
-### Textos Legales (España — LSSI-CE / RGPD)
-
-Configurados bajo el modelo **Beta Comercial / Pre-constitución** a nombre de **GXA Studio**:
-
-| Página | Ruta |
-|---|---|
-| Política de Privacidad | `/privacidad` |
-| Aviso Legal | `/aviso-legal` |
-| Política de Cookies | `/cookies` |
-
-El mensaje de confirmación WhatsApp incluye el aviso RGPD/AEPD: `"Tratamos tus datos según el RGPD. Responde INFO para más detalles."`
+| `idx_clinics_slug` | clinics | `slug` | ✅ Activo |
+| `idx_services_clinic_active` | services | `(clinic_id, is_active)` | ✅ Activo |
+| `idx_doctors_clinic_active` | doctors | `(clinic_id, is_active)` | ✅ Activo |
+| `idx_appointments_doctor_slots` | appointments | `(doctor_id, starts_at)` | ✅ Activo |
+| `idx_appointments_clinic_starts` | appointments | `(clinic_id, status, starts_at)` | ✅ Activo |
+| `idx_appt_patient_phone` | appointments | `patient_phone` btree (total) | ⚠️ Poco selectivo |
+| `idx_appt_otp_expiry` | appointments | filtro `status='pending'` | 💀 MUERTO — status ya no puede ser 'pending' |
+| `marketing_leads_created_at_idx` | marketing_leads | `created_at DESC` | ✅ Activo |
+| `marketing_leads_status_idx` | marketing_leads | `status` | ✅ Activo |
+| `marketing_leads_email_idx` | marketing_leads | `email` | ✅ Activo |
+| UNIQUE idx parcial en exceptions | doctor_schedule_exceptions | `(doctor_id, date, is_working, COALESCE(st,'00:00'), COALESCE(et,'00:00'))` | ✅ Activo |
 
 ---
 
-## 5. Stand-By / Pending (NO modificar ni intentar arreglar)
+### 2.3 RPCs Activas
 
-### Recordatorios Automáticos 24h
+Todas las SECURITY DEFINER tienen `SET search_path = pg_catalog, public` (fix S-4, migration `20260523000000`).
 
-**Estado**: implementado en código, **cron desactivado intencionadamente**.
+| Función | Argumentos | Returns | Caller | Grant |
+|---|---|---|---|---|
+| `get_available_slots` | `(doctor_id, service_id, date)` | `TABLE(slot_start TIMESTAMPTZ)` | `/api/slots` | anon |
+| `get_slots_for_service` | `(service_id, date)` | `TABLE(slot_start, doctor_id, doctor_name, doctor_specialty)` | `/api/slots` mode-B | anon |
+| `book_slot_confirmed` | `(clinic_id, doctor_id, service_id, patient_name, patient_phone, starts_at)` | `appointments` | `/api/book`, `bookAppointmentManual` | anon |
+| `reschedule_appointment` | `(cancellation_token, new_doctor_id, new_starts_at)` | `appointments` | `rescheduleAppointment` server action | service_role |
 
-**Por qué está en stand-by**: el plan Hobby de Vercel no soporta crons con frecuencia horaria (`0 * * * *`). El trigger no se añade a `vercel.json` hasta migrar a un plan de pago en producción.
+#### Pipeline de validación — `book_slot_confirmed`
 
-**Qué está implementado** (no tocar):
+```
+1. doctor ∈ clinic + is_active          → P0006 DOCTOR_NOT_IN_CLINIC
+2. doctor offers service                → P0007 DOCTOR_DOES_NOT_OFFER_SERVICE   (S-1)
+3. service is_active (→ duration)       → P0003 SERVICE_NOT_FOUND
+4. starts_at > NOW()                    → P0008 INVALID_OR_UNAVAILABLE_SLOT     (S-2)
+5. No full-day-off exception            → P0008                                 (S-2)
+6. No partial-block overlap             → P0008                                 (S-2)
+7. Slot fits in working window          → P0008                                 (S-2)
+8. INSERT → EXCLUDE constraint          → P0001 SLOT_TAKEN (carrera atómica)
+```
 
-| Pieza | Archivo | Estado |
+#### Pipeline de validación — `reschedule_appointment`
+
+```
+1. SELECT FOR UPDATE (serializa llamadas concurrentes sobre el mismo token)
+2. starts_at > NOW()                    → P0004
+3. new_doctor ∈ original clinic         → P0009 CROSS_TENANT_VIOLATION         (S-3)
+4. new_doctor offers original service   → P0010 INVALID_SERVICE_FOR_NEW_DOCTOR  (S-3)
+5. service still active (→ duration)    → P0003
+6. UPDATE → EXCLUDE constraint          → P0001 SLOT_TAKEN
+```
+
+---
+
+### 2.4 Funciones de Trigger
+
+| Función | Tipo | SECURITY DEFINER | search_path | Estado |
+|---|---|---|---|---|
+| `fn_handle_new_user()` | TRIGGER (after insert on auth.users) | ✅ | ❌ **Falta** | ⚠️ S-4 parcial pendiente |
+| `fn_set_updated_at()` | TRIGGER (before update on clinics) | ✅ | ❌ **Falta** | ⚠️ S-4 parcial pendiente |
+
+---
+
+### 2.5 Migraciones — Lista Completa (20)
+
+| Archivo | Contenido | Nota |
 |---|---|---|
-| Columna `reminder_sent BOOLEAN DEFAULT false` | `supabase/migrations/003_whatsapp_instant_booking.sql` | ✅ En BD |
-| Índice de rendimiento para el cron | misma migración | ✅ En BD |
-| `sendWhatsAppReminder()` | `lib/twilio/client.ts:164` | ✅ Listo |
-| `GET /api/cron/reminders` | `app/api/cron/reminders/route.ts` | ✅ Listo |
-| `vercel.json` | raíz del proyecto | ⏸ Vacío (cron desactivado) |
+| `001_initial.sql` | Schema base inicial (versión 1) | ⚠️ Duplicado con `20260515000000` y `20260515_final_schema` |
+| `002_add_phone_constraint.sql` | Constraint E.164 en patient_phone | — |
+| `003_whatsapp_instant_booking.sql` | `cancellation_token`, `reminder_sent`, `book_slot_confirmed` RPC (versión 1) | — |
+| `20260515000000_initial_schema.sql` | Schema base (versión 2, con variaciones) | ⚠️ Duplicado; no idempotente |
+| `20260515100000_slots_for_service.sql` | `get_slots_for_service` RPC (versión 1) | — |
+| `20260515200000_reschedule_rpc.sql` | `reschedule_appointment` RPC (versión 1) | — |
+| `20260515300000_security_patches.sql` | S-04 previo: doctor ∈ clinic en `book_slot_confirmed` | — |
+| `20260515_final_schema.sql` | Schema completo + seed + triggers (CERTIFICADO, en prod) | — |
+| `20260515_insurances.sql` | Tablas `insurances` + `doctor_insurances` + seed mutuas Spain | — |
+| `20260515_perf_indexes.sql` | 5 índices B-Tree de rendimiento | — |
+| `20260516_fix_get_slots_for_service.sql` | Fix en `get_slots_for_service` | — |
+| `20260516_remove_pending_status.sql` | DROP status='pending' del CHECK; elimina columnas otp_* | — |
+| `20260520000000_add_color_columns.sql` | `services.color` (DEFAULT 'blue') + `appointments.color` (NULLABLE) | — |
+| `20260520100000_doctor_schedule_exceptions.sql` | Tabla `doctor_schedule_exceptions` + RPCs exception-aware | — |
+| `20260520200000_partial_time_blocks.sql` | Bloqueos parciales múltiples por día; CHECK extendido a 3 formas | — |
+| `20260520300000_filter_past_slots.sql` | RPCs filtran slots pasados (`v_cursor < NOW()`) | — |
+| `20260522120000_marketing_leads.sql` | Tabla `marketing_leads` (dominio GXA Studio) | — |
+| `20260522130000_clinic_legal_fields.sql` | `clinics.legal_name` + `clinics.cif` | — |
+| `20260523000000_critical_security_patches.sql` | S-1 (P0007) + S-2 (P0008) + S-3 (P0009/P0010) + S-4 (`search_path` en 4 RPCs) | — |
+| `20260523100000_drop_legacy_otp_rpcs.sql` | `DROP FUNCTION book_slot`, `DROP FUNCTION confirm_appointment` | Última migración aplicada |
 
-**Cómo activar cuando llegue el momento**:
-1. Actualizar `vercel.json`:
-   ```json
-   {
-     "crons": [{ "path": "/api/cron/reminders", "schedule": "0 * * * *" }]
-   }
-   ```
-2. Añadir `CRON_SECRET` en Vercel Dashboard → Settings → Environment Variables.
-3. El endpoint ya valida `Authorization: Bearer CRON_SECRET` y devuelve `{ sent, failed }`.
+**Deuda D-1**: `001_initial.sql`, `20260515000000_initial_schema.sql` y `20260515_final_schema.sql` definen bases similares con variaciones. Sin ser idempotentes. Consolidar a una sola migración inicial antes del próximo `supabase db push`.
 
 ---
 
-## 6. Variables de Entorno
+## 3. Seguridad
+
+### 3.1 Rate Limiting (Upstash Redis)
+
+| Limiter | Prefijo | Ventana | Límite | Endpoint |
+|---|---|---|---|---|
+| `bookingIpLimiter` | `@mbb/booking:ip` | 1 h sliding | 10/IP | `POST /api/book` |
+| `slotsLimiter` | `@mbb/slots:ip` | 1 min sliding | 60/IP | `GET /api/slots`, `/api/slots/week` |
+| `leadsIpLimiter` | `@mbb/leads:ip` | 1 h sliding | 5/IP | `POST /api/leads` |
+| `demoLimiter` | `@mbb/demo:ip` | 1 min sliding | 5/IP | `GET /admin/guest` |
+
+Todos los limiters **fail open** (si Redis no está disponible, la petición pasa). El constructor Redis es lazy para evitar errores en build cuando las env vars están ausentes.
+
+### 3.2 RLS y Roles
+
+- **Admin**: opera solo sobre su `clinic_id` (extraído de `profiles` via `auth.uid()`).
+- **anon**: puede ejecutar RPCs `get_available_slots`, `get_slots_for_service`, `book_slot_confirmed`.
+- **service_role**: bypassa RLS; usado por `cancelByToken`, `cancelOverlappingAppointments`, `bookAppointmentManual`, `adminCancelAppointment`.
+- **marketing_leads**: RLS deny-by-default (sin políticas). Solo service_role vía `/api/leads`.
+- **clinics (public read)**: la policy `public_read_clinics` NO está en ningún archivo de migración — drift detectado. El booking público funciona en prod porque existe en la DB directamente. **Pendiente**: añadir la policy al repo o reemplazar las queries anon a `clinics` por `createServiceClient()`.
+
+### 3.3 SECURITY DEFINER — search_path
+
+Estado tras migración `20260523000000`:
+
+| Función | search_path fijado |
+|---|---|
+| `get_available_slots` | ✅ `SET search_path = pg_catalog, public` |
+| `get_slots_for_service` | ✅ |
+| `book_slot_confirmed` | ✅ |
+| `reschedule_appointment` | ✅ |
+| `fn_handle_new_user` | ❌ Pendiente |
+| `fn_set_updated_at` | ❌ Pendiente |
+
+### 3.4 Autenticación Admin y Modo Demo
+
+**Auth normal**: Supabase Auth (email + password). Middleware intercepta `/admin/*` sin sesión → redirige a `/auth/login`.
+
+**Modo Demo** (`/admin/guest`):
+- Rate-limit: `demoLimiter` (5/min IP).
+- `signInWithPassword` con credenciales de la cuenta `admin@demo.com` (hardcoded — solo en deploys de demo).
+- Cookie `mbb_guest=1`: `httpOnly: true`, `secure: true`, `sameSite: 'strict'`, `maxAge: 2h`.
+- Detección en `lib/admin/guest-guard.ts`: double-check cookie + `user.email === DEMO_EMAIL`.
+- Patrón `DEMO_RESULT`: todas las Server Actions mutadoras comprueban `isGuestMode()` como primera línea y retornan `{ demo: true }` sin tocar la BD.
+
+### 3.5 Webhooks Twilio — Firma HMAC
+
+Ambos endpoints (`/api/webhooks/whatsapp` y `/api/webhooks/twilio`) reconstruyen la URL de firma desde `x-forwarded-proto` + `x-forwarded-host` — **no** desde `NEXT_PUBLIC_APP_URL`. Esto evita que la verificación falle en deploy previews.
+
+### 3.6 Validaciones de Input
+
+- **UUID**: regex `/^[0-9a-f]{8}-…$/i` antes de cualquier query.
+- **Phone**: solo E.164 (`/^\+[1-9]\d{7,14}$/`).
+- **Name**: strip de caracteres de control (prevención SMS injection).
+- **`server-only`**: importado en todos los módulos de servidor.
+- **S-8**: `assertServicesBelongToClinic()` en `createDoctor`/`updateDoctor` verifica que los `service_id` pertenezcan a la misma clínica del admin antes de INSERT en `doctor_services`.
+
+---
+
+## 4. Variables de Entorno
 
 ```bash
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=        # SERVER-SIDE ONLY
-SUPABASE_PROJECT_ID=              # Solo para npm run db:types
+SUPABASE_SERVICE_ROLE_KEY=        # SERVER-SIDE ONLY — nunca exponer al cliente
+SUPABASE_PROJECT_ID=              # Solo para: npm run db:types
 
 # Twilio
-TWILIO_ACCOUNT_SID=
+TWILIO_ACCOUNT_SID=               # AC...
 TWILIO_AUTH_TOKEN=
-TWILIO_PHONE_NUMBER=              # E.164, e.g. +15005550006 (SMS/OTP flow)
+TWILIO_PHONE_NUMBER=              # E.164 — SMS/legacy (Twilio test: +15005550006)
 TWILIO_WHATSAPP_FROM=             # WhatsApp sender (sandbox: whatsapp:+14155238886)
 
 # App
 NEXT_PUBLIC_APP_URL=              # e.g. https://medical-booking-boilerplate.vercel.app
-NEXT_PUBLIC_DEFAULT_TIMEZONE=     # Optional IANA fallback, e.g. Europe/Madrid
+NEXT_PUBLIC_DEFAULT_TIMEZONE=     # IANA fallback opcional, e.g. Europe/Madrid
 
-# OTP Security
-OTP_HASH_PEPPER=                  # 32-byte hex random (openssl rand -hex 32)
+# Gmail (leads pipeline — GXA Studio interno)
+GMAIL_APP_USER=studiogxa@gmail.com
+GMAIL_APP_PASSWORD=               # Gmail App Password (16 chars, Account → Security → 2FA → App passwords)
 
 # Redis (Upstash)
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 
-# Cron (cuando se active)
-CRON_SECRET=                      # 32-byte hex random — pendiente de añadir en Vercel Dashboard
+# Demo mode
+DEMO_EMAIL=admin@demo.com         # Cuenta Supabase Auth para el modo demo
+
+# Cron (cuando se active — ver §8)
+CRON_SECRET=                      # 32-byte hex random (openssl rand -hex 32)
 ```
+
+**Eliminado**: `OTP_HASH_PEPPER` — código OTP removido en `20260516_remove_pending_status.sql`; helpers JS borrados de `lib/utils.ts` y bloque eliminado del `.env.example` (commit `703bf3a`). Verificar que no quede definido en `.env.local` ni en Vercel Dashboard.
 
 ---
 
-## 7. Base de Datos — Esquema Activo
+## 5. Arquitectura de Cache
 
-### Tablas Principales
+| Capa | Clave | TTL | Invalidado por |
+|---|---|---|---|
+| Upstash (booking data) | `mbb:booking:v2:{slug}` | 5 min | `invalidateBookingCache(slug)` — llamado desde todas las mutations de servicios, médicos, horarios, seguros |
+| Next.js `revalidatePath` | `/admin/{appointments,schedules,agenda,doctors,services}`, `/{clinicSlug}` | — | `bustSlotCaches(clinicSlug)` |
+| HTTP `Cache-Control` | `/api/slots`, `/api/slots/week` | `no-store` | — Nunca cachear — excepciones cambian en tiempo real |
+| HTTP `Cache-Control` | `/api/available-days` | `private, max-age=300` | Devuelve solo `day_of_week` estructural — insensible a excepciones puntuales |
 
-```
-clinics                       id, name, slug*, timezone, phone, address, settings(jsonb)
-profiles                      id→auth.users, clinic_id, full_name, role(admin|staff)
-services                      id, clinic_id, name, duration_minutes, price, is_active,
-                              color(text, DEFAULT 'blue')
-doctors                       id, clinic_id, name, email, specialty, avatar_url, is_active
-doctor_services               doctor_id, service_id  [PK composite]
-schedules                     id, doctor_id, day_of_week(0-6), start_time, end_time, is_active
-doctor_schedule_exceptions    id, doctor_id, exception_date, is_working(bool),
-                              start_time(time, NULLABLE), end_time(time, NULLABLE),
-                              UNIQUE index on (doctor_id, date, is_working,
-                                              COALESCE(start_time,'00:00'),
-                                              COALESCE(end_time,'00:00')),
-                              CHECK admite 3 formas:
-                                (is_working=false, hours NULL)         → día libre
-                                (is_working=false, hours NOT NULL)     → bloqueo parcial
-                                (is_working=true,  hours NOT NULL)     → ventana custom (legacy)
-appointments                  id, clinic_id, doctor_id, service_id,
-                              patient_name, patient_phone,
-                              starts_at(UTC), ends_at(UTC),
-                              status(confirmed|cancelled),
-                              cancellation_token(UUID, UNIQUE),
-                              reminder_sent(BOOLEAN, DEFAULT false),
-                              notes,
-                              color(text, NULLABLE — override por cita; NULL = hereda services.color)
-```
-
-### RPCs Activas
-
-| Función | Caller | Auth |
-|---|---|---|
-| `get_available_slots(doctor_id, service_id, date)` | `/api/slots` | anon |
-| `get_slots_for_service(service_id, date)` | `/api/slots` (mode B) | anon |
-| `book_slot_confirmed(clinic_id, doctor_id, service_id, name, phone, starts_at)` | `/api/book`, `bookAppointmentManual` | anon |
-| `reschedule_appointment(cancellation_token, new_doctor_id, new_starts_at)` | `rescheduleAppointment` | service role |
-
-### Migraciones Aplicadas en Producción
-
-| Archivo | Contenido |
-|---|---|
-| `20260515_final_schema.sql` | Schema completo + seed + trigger auto-perfil (CERTIFICADO) |
-| `20260515_perf_indexes.sql` | 5 índices B-Tree (clínica, servicios, médicos, citas) |
-| `003_whatsapp_instant_booking.sql` | `cancellation_token`, `reminder_sent`, `book_slot_confirmed` RPC |
-| `20260520000000_add_color_columns.sql` | `services.color` (text DEFAULT 'blue') + `appointments.color` (text NULLABLE) |
-| `20260520100000_doctor_schedule_exceptions.sql` | tabla `doctor_schedule_exceptions` + RPCs `get_available_slots` y `get_slots_for_service` ahora exception-aware |
-| `20260520200000_partial_time_blocks.sql` | DROP UNIQUE en (doctor_id, exception_date) + CHECK extendido a 3 formas + RPCs reescritas para soportar bloqueos parciales y múltiples filas por día |
+`bustSlotCaches(clinicSlug)` es el punto único de invalidación: llama a `revalidatePath` (múltiples rutas) + `invalidateBookingCache` (Redis). Se invoca desde todas las Server Actions de horarios, médicos y servicios.
 
 ---
 
-## 8. Invariantes Técnicos — NO Romper
+## 6. Invariantes Técnicos — NO Romper
 
-### 8.1 DST y Zona Horaria (Auditado 2026-05-16)
+### 6.1 DST y Zona Horaria
 
-La RPC `get_slots_for_service` (y `get_available_slots`) es **DST-safe**. El invariante crítico está en estas líneas SQL:
+Las RPCs `get_available_slots` y `get_slots_for_service` son DST-safe:
 
 ```sql
-v_win_start := timezone(r_doc.doc_tz, (p_date + r_sched.start_time)::TIMESTAMP);
-v_win_end   := timezone(r_doc.doc_tz, (p_date + r_sched.end_time)::TIMESTAMP);
+v_win_start := timezone(v_timezone, (p_date + r_sched.start_time)::TIMESTAMP);
+v_win_end   := timezone(v_timezone, (p_date + r_sched.end_time)::TIMESTAMP);
 ```
 
-`timezone(zone, TIMESTAMP)` consulta la base de datos IANA por fecha concreta → el offset UTC+2 (verano) vs UTC+1 (invierno) se aplica automáticamente. **Nunca añadir offsets hardcodeados ni usar `AT TIME ZONE` con `TIMESTAMPTZ` como input.**
+`timezone(zone, TIMESTAMP)` consulta la base IANA para la fecha concreta. **Nunca usar `AT TIME ZONE` sobre `TIMESTAMPTZ` como input ni añadir offsets hardcodeados.**
 
-Prueba empírica ejecutada en producción: `10:00 local` en mayo (CEST) → `08:00 UTC`; `10:00 local` en noviembre (CET) → `09:00 UTC`. Readback local siempre = `10:00` ✓
+### 6.2 Slot RPCs — Reglas de Excepciones (3 pasos por doctor)
 
-### 8.2 Color de Citas — Diccionario Estático (Tailwind Purge Prevention)
+```
+1. ¿Existe fila (is_working=false, start_time IS NULL)?
+   → SÍ: 0 slots (día libre). RETURN / CONTINUE.
 
-Las tarjetas de cita en `/admin/agenda` se colorean mediante un sistema de herencia cromática:
-1. `appointments.color` (override por cita) → `services.color` (color base del servicio) → `'blue'` (fallback)
-2. Las citas pasadas siempre muestran gris (`slate`) independientemente del color asignado.
-
-El diccionario de clases Tailwind vive en `lib/constants/colors.ts` y exporta `APPOINTMENT_COLORS` con claves estáticas. **NUNCA interpoler nombres de clase dinámicamente** (ej. `` `bg-${color}-50` ``) — Tailwind purgará esas clases en producción. Todos los valores del diccionario deben aparecer verbatim en el código fuente.
-
-Los colores válidos son: `'blue' | 'emerald' | 'purple' | 'amber' | 'rose'`. Este enum está validado tanto en el `ServiceSchema` (Zod) como en `adminUpdateAppointmentColor` (server action).
-
-### 8.4 Slot RPCs — Excepciones y Bloqueos
-
-Las RPCs `get_available_slots(doctor, service, date)` y `get_slots_for_service(service, date)` aplican 3 reglas en orden:
-
-```text
-1. ¿Existe alguna fila (is_working=false, start_time IS NULL)?
-   → SÍ: 0 slots (día completo libre). RETURN/CONTINUE.
-
-2. ¿Existen filas (is_working=true)?  (legacy "ventana custom")
+2. ¿Existen filas (is_working=true)?  (ventana custom legacy)
    → SÍ: usar esas filas como ventanas en lugar del horario semanal.
-   → NO: usar el horario semanal (`schedules` por day_of_week).
+   → NO: usar schedules por day_of_week.
 
-3. Para cada hueco generado:
-   - Saltar si solapa con una appointment activa.
-   - Saltar si solapa con cualquier fila (is_working=false, start_time NOT NULL)
-     → ese es el "bloqueo parcial".
+3. Para cada slot generado:
+   - Saltar si solapa con appointment activa.
+   - Saltar si solapa con fila (is_working=false, start_time NOT NULL)  → bloqueo parcial.
 ```
 
-La iteración usa `UNION ALL` entre las ventanas-custom y el horario-semanal, condicionado por la variable `v_has_custom` calculada antes del loop.
+El chequeo de día libre debe ir **antes** de generar slots. El overlap usa `tstzrange('[)')` — bordes exclusivos en el extremo superior.
 
-**Verificación matemática** (auditada 2026-05-20 contra DB real):
-- Baseline: schedule 05:00-17:00, servicio 30 min → 24 slots
-- + bloqueo parcial 14:00-16:00 → 20 slots (saltos: 14:00, 14:30, 15:00, 15:30) ✓
-- + dos bloqueos parciales (14:00-16:00 y 10:00-10:30) → 19 slots ✓
-- + fila "Día Completo Libre" → 0 slots ✓
+### 6.3 Paginación Semanal — Fechas Locales
 
-**Invariantes a no romper**:
-- El chequeo de "Día Completo Libre" debe ir ANTES de generar slots — si va después, gastarías ciclos generando huecos que vas a descartar igualmente.
-- En `get_slots_for_service` los 3 pasos se evalúan **por doctor** dentro del loop principal.
-- El overlap con bloqueos parciales se calcula con `tstzrange(..., ..., '[)')` `&&` — bordes exclusivos en el extremo superior (un slot que termina a las 14:00 no solapa con un bloqueo que empieza a las 14:00).
-- Los rangos se calculan con `timezone(zone, TIMESTAMP)` (DST-safe), nunca `AT TIME ZONE` sobre `TIMESTAMPTZ` (§8.1).
-
-### 8.5 HTTP Cache de /api/slots — no-store obligatorio
-
-Los endpoints `/api/slots` y `/api/slots/week` deben usar `Cache-Control: no-store, must-revalidate`. La cabecera previa `public, max-age=30, stale-while-revalidate=60` hacía que el navegador/CDN cachease respuestas de huecos hasta 30 segundos, **enmascarando** los bloqueos recién añadidos por el admin. Tras crear un bloqueo desde `/admin/schedules`, el cliente ve los huecos antiguos como disponibles durante hasta 30 segundos — ése era el bug reportado y resuelto en el commit `20260520-partial-blocks`.
-
-`/api/available-days` mantiene su cache de 5 min porque devuelve `day_of_week` estructural (no fechas concretas), insensible a excepciones.
-
-### 8.3 Paginación Semanal — Invariante de Navegación
-
-`parseISO('YYYY-MM-DD')` en date-fns v4 devuelve medianoche **local** (no UTC). La conversión `.toISOString().slice(0,10)` introduce un desplazamiento de −1 día en zonas UTC+ al escribir el estado de navegación.
-
-**Patrón correcto** (en `booking-search.tsx`):
+`parseISO('YYYY-MM-DD')` en date-fns v4 devuelve medianoche local (no UTC). Usar `format(addDays(...), 'yyyy-MM-dd')` para navegar semanas. **Nunca** `.toISOString().slice(0,10)` sobre un resultado de `parseISO` en zonas UTC+.
 
 ```typescript
-// ✅ Correcto — extrae fecha local
-format(addDays(parseISO(filters.date), 7),  'yyyy-MM-dd')
-format(addDays(parseISO(filters.date), -7), 'yyyy-MM-dd')
+// ✅ Correcto
+format(addDays(parseISO(filters.date), 7), 'yyyy-MM-dd')
 
-// ❌ Roto en UTC+ (p. ej. Europe/Madrid) — convierte a UTC perdiendo el offset
+// ❌ Roto en UTC+ (pierde el offset, puede dar ayer)
 addDays(parseISO(filters.date), 7).toISOString().slice(0, 10)
 ```
 
-**Patrón correcto para `today` local** (en `search-bar.tsx`):
+### 6.4 Color de Citas — Tailwind Purge
 
-```typescript
-// ✅ Correcto — usa getFullYear/getMonth/getDate (hora local del navegador)
-const now = new Date()
-const today = [now.getFullYear(), String(now.getMonth()+1).padStart(2,'0'), String(now.getDate()).padStart(2,'0')].join('-')
+Las tarjetas de agenda usan un diccionario estático `APPOINTMENT_COLORS` (`lib/constants/colors.ts`). **Nunca interpolar nombres de clase dinámicamente** (ej. `` `bg-${color}-50` ``). Todos los valores deben aparecer verbatim en el código.
 
-// ❌ Roto — devuelve fecha UTC, puede ser ayer entre 00:00–02:00 CEST
-new Date().toISOString().slice(0, 10)
-```
+Colores válidos: `blue | emerald | purple | amber | rose`. Las citas pasadas siempre muestran `slate`.
+
+### 6.5 HTTP Cache — no-store en slots
+
+`/api/slots` y `/api/slots/week` deben mantener `Cache-Control: no-store`. Un cambio a `public, max-age=N` enmascara bloqueos recién creados durante N segundos (bug ya vivido y resuelto).
+
+### 6.6 Modo Demo — DEMO_RESULT
+
+Todas las Server Actions mutadoras deben comprobar `isGuestMode()` como **primera línea**. Nunca dejar pasar una mutación sin este check en el dominio `/admin/`.
+
+### 6.7 Excepciones de horario — orden de persistencia (mitigación B-1)
+
+`createScheduleException` debe persistir la excepción en `doctor_schedule_exceptions` **antes** de invocar `cancelOverlappingAppointments`. Desde el INSERT, `get_available_slots` / `book_slot_confirmed` rechazan nuevas reservas dentro de la ventana (P0008), cerrando estructuralmente la race condition entre el `AlertDialog` de conflictos y el `UPDATE` bulk.
+
+Reglas asociadas (no romper):
+
+- `cancelOverlappingAppointments` devuelve la lista de filas modificadas (`UPDATE … RETURNING id, patient_name, patient_phone, starts_at`). Esa lista es **la única fuente de verdad** que alimenta el `after()` de Twilio; nunca recalcular la ventana ni hacer un SELECT separado para notificar.
+- Si el `UPDATE` falla, `createScheduleException` debe hacer rollback del INSERT (`DELETE` por id) antes de devolver el error, para no dejar la excepción bloqueando la agenda sin haber avisado a los pacientes afectados.
+- `checkExceptionConflicts` solo se usa para poblar el `AlertDialog`; el conteo final mostrado al admin viene de `cancelledCount` (= `rows.length` del UPDATE), nunca del check previo.
+
+---
+
+## 7. Deuda Técnica Conocida
+
+| ID | Descripción | Impacto | Prioridad |
+|---|---|---|---|
+| **D-1** | Migraciones duplicadas: `001_initial`, `20260515000000_initial_schema`, `20260515_final_schema` definen bases similares sin ser idempotentes | `supabase db push` futuro puede chocar | Alta |
+| **D-2** | `lib/supabase/types.ts` desactualizado: tiene `clinics.admin_id` inexistente, falta `marketing_leads`/`insurances`/`doctor_insurances`/`legal_name`/`cif`, lista RPCs muertas (`book_slot`, `confirm_appointment`), columnas `otp_*` | Casts `as never` / `as unknown` en código | Alta |
+| **D-5** | `appointment_status` type enum aún expone `'pending'` aunque el CHECK ya no lo permite | tipos.ts diverge de la DB | Baja |
+| **D-6** | `services.color` y `appointments.color` sin CHECK constraint en DB (solo Zod lo valida) | UPDATE SQL directo puede insertar valores inválidos | Baja |
+| **D-7** | `vercel.json` no existe en el repo. §8 lo documenta como "vacío" pero el archivo no está | Cron no activable sin crear el archivo | Baja |
+| **D-8** | `public_read_clinics` policy no está en ninguna migración — solo existe en la DB de prod | Schema drift; si se dropea la DB no se recrea | Media |
+| **D-9** | `fn_handle_new_user` y `fn_set_updated_at` son SECURITY DEFINER sin `SET search_path` | CVE-class search_path hijacking (S-4 parcial) | Alta |
+| **D-10** | `idx_appt_otp_expiry` filtra por `status='pending'` que ya no existe → índice muerto | Waste de storage y mantenimiento PG | Baja |
+| **D-11** | `bookAppointmentManual.sanitizePhone` hardcoded a España (`+34` si 9 dígitos 6/7) | Clínicas no españolas reciben número corrupto | Media (antes de internacionalizar) |
+| **D-12** | `getBaseUrl()` tiene PROD_FALLBACK hardcoded a `medical-booking-boilerplate.vercel.app` | Forks / clientes con otro dominio reciben links rotos | Media |
+
+> **Resueltos** (gaps en la numeración): **D-3** (OTP helpers en `lib/utils.ts`) y **D-4** (RPCs `book_slot`/`confirm_appointment` en DB) → eliminados en commit `703bf3a` + migración `20260523100000_drop_legacy_otp_rpcs.sql`. **B-1** (race condition en `createScheduleException`) → estructuralmente cerrada por persistencia previa de la excepción; ver §6.7.
+
+---
+
+## 8. Stand-By / Pendiente (NO modificar)
+
+### Recordatorios Automáticos 24h
+
+**Estado**: implementado en código, cron desactivado intencionadamente.
+
+**Motivo**: el plan Hobby de Vercel no soporta crons con frecuencia horaria.
+
+| Pieza | Archivo | Estado |
+|---|---|---|
+| Columna `reminder_sent BOOLEAN DEFAULT false` | `003_whatsapp_instant_booking.sql` | ✅ En BD |
+| `sendWhatsAppReminder()` | `lib/twilio/client.ts` | ✅ Listo |
+| `GET /api/cron/reminders` | `app/api/cron/reminders/route.ts` | ✅ Listo (secuencial — ver B-9) |
+| `vercel.json` | raíz del proyecto | ❌ No existe |
+
+**Cómo activar**:
+1. Crear `vercel.json`:
+   ```json
+   { "crons": [{ "path": "/api/cron/reminders", "schedule": "0 * * * *" }] }
+   ```
+2. Añadir `CRON_SECRET` en Vercel Dashboard → Settings → Environment Variables.
+3. Antes de activar: refactorizar el loop secuencial en `route.ts` a `Promise.allSettled` + batches (ver D-B9 en ultrareview).
 
 ---
 
@@ -521,7 +470,7 @@ new Date().toISOString().slice(0, 10)
 | `e438e36` | feat(admin): complete admin dashboard |
 | `a7ff83d` | fix(admin): make timezone dynamic |
 | `b3a116f` | feat(booking): add patient booking flow + fix TypeScript types |
-| `faa19d2` | fix(types): upgrade @supabase/ssr 0.5.2→0.10.3 (52 errors → 0) |
+| `faa19d2` | fix(types): upgrade @supabase/ssr 0.5.2→0.10.3 |
 | `8ccd130` | test(e2e): add Playwright booking funnel + Vercel deployment config |
 | `33aecb9` | chore: final quality audit and typescript fixes |
 | `4c815e5` | perf: implement parallel fetching, redis caching, and db indexing |
@@ -531,6 +480,8 @@ new Date().toISOString().slice(0, 10)
 | `7b2ea2a` | feat(admin): implement server-side global search for appointments |
 | `1c88e21` | feat(admin): add chromatic color system for agenda appointment cards |
 | `4e84b20` | fix(admin): repair color swatches purged by Tailwind in production |
-| `806256b` | feat: instant color updates, auto-dismiss toasts, and optimistic doctor schedule exceptions |
-| `38097a7` | feat: partial time blocks, multiple exceptions per day, and no-store slots cache |
-| `(HEAD)` | feat: visual schedule exceptions and automated conflict resolution |
+| `806256b` | feat: instant color updates, auto-dismiss toasts, optimistic exceptions |
+| `38097a7` | feat: partial time blocks, multiple exceptions per day, no-store slots cache |
+| `5a8a9fa` | fix(security): critical RPC validation patches for cross-tenant isolation (S-1, S-2, S-3, S-4) |
+| `51c8733` | fix(security): application-layer patches (S-5 cookie, S-6/S-7 rate-limits, S-8 service-clinic check, S-9/S-10 webhook signing) |
+| `(HEAD)` | fix(agenda): resolve B-1 race condition by persisting exceptions prior to cancellation and purge dead OTP code |
