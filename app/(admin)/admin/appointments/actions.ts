@@ -8,15 +8,11 @@ import { isGuestMode, DEMO_RESULT } from '@/lib/admin/guest-guard'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/**
- * Normalize phone input so staff don't need to type E.164 manually.
- * - Strips spaces, dashes, dots, parentheses
- * - If result is 9 digits starting with 6 or 7 (Spanish mobile), prepends +34
- */
+// Strip whitespace and common separators; do NOT inject any country code.
+// The downstream isValidE164 check rejects anything that isn't already in
+// canonical form, which keeps the action neutral across clinic locales.
 function sanitizePhone(raw: string): string {
-  const stripped = raw.trim().replace(/[\s\-().]/g, '')
-  if (/^[67]\d{8}$/.test(stripped)) return `+34${stripped}`
-  return stripped
+  return raw.trim().replace(/[\s\-().]/g, '')
 }
 
 async function getClinicId(supabase: Awaited<ReturnType<typeof createClient>>) {
@@ -66,7 +62,7 @@ export async function bookAppointmentManual(data: BookManualFormData) {
   const phone = sanitizePhone(patientPhone)
 
   if (name.length < 2)    return { error: 'El nombre del paciente debe tener al menos 2 caracteres.' }
-  if (!isValidE164(phone)) return { error: 'Teléfono no válido. Introduce un número como 612345678 o +34612345678.' }
+  if (!isValidE164(phone)) return { error: 'Teléfono no válido. Introduce el número en formato internacional E.164 (p.ej. +34612345678).' }
   if (!UUID_RE.test(doctorId))  return { error: 'Médico no válido.' }
   if (!UUID_RE.test(serviceId)) return { error: 'Servicio no válido.' }
   if (new Date(startsAt) < new Date()) return { error: 'La fecha y hora deben ser en el futuro.' }

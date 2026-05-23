@@ -1,6 +1,3 @@
-// AUTO-GENERATED — do not edit manually.
-// Regenerate with: npm run db:types
-
 export type Json =
   | string
   | number
@@ -100,8 +97,10 @@ export type Database = {
         Row: {
           address: string | null
           admin_id: string | null
+          cif: string | null
           created_at: string
           id: string
+          legal_name: string | null
           name: string
           phone: string | null
           settings: Json
@@ -112,8 +111,10 @@ export type Database = {
         Insert: {
           address?: string | null
           admin_id?: string | null
+          cif?: string | null
           created_at?: string
           id?: string
+          legal_name?: string | null
           name: string
           phone?: string | null
           settings?: Json
@@ -124,8 +125,10 @@ export type Database = {
         Update: {
           address?: string | null
           admin_id?: string | null
+          cif?: string | null
           created_at?: string
           id?: string
+          legal_name?: string | null
           name?: string
           phone?: string | null
           settings?: Json
@@ -295,6 +298,48 @@ export type Database = {
         }
         Relationships: []
       }
+      marketing_leads: {
+        Row: {
+          clinic: string
+          created_at: string
+          email: string
+          id: string
+          ip: string | null
+          message: string | null
+          name: string
+          notes: string | null
+          source: string
+          status: string
+          user_agent: string | null
+        }
+        Insert: {
+          clinic: string
+          created_at?: string
+          email: string
+          id?: string
+          ip?: string | null
+          message?: string | null
+          name: string
+          notes?: string | null
+          source?: string
+          status?: string
+          user_agent?: string | null
+        }
+        Update: {
+          clinic?: string
+          created_at?: string
+          email?: string
+          id?: string
+          ip?: string | null
+          message?: string | null
+          name?: string
+          notes?: string | null
+          source?: string
+          status?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           clinic_id: string | null
@@ -411,41 +456,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      book_slot: {
-        Args: {
-          p_clinic_id: string
-          p_doctor_id: string
-          p_otp_code_hash: string
-          p_patient_name: string
-          p_patient_phone: string
-          p_service_id: string
-          p_starts_at: string
-        }
-        Returns: {
-          cancellation_token: string
-          clinic_id: string
-          color: string | null
-          created_at: string
-          doctor_id: string
-          ends_at: string
-          id: string
-          notes: string | null
-          otp_code_hash: string | null
-          otp_expires_at: string | null
-          patient_name: string
-          patient_phone: string
-          reminder_sent: boolean
-          service_id: string
-          starts_at: string
-          status: Database["public"]["Enums"]["appointment_status"]
-        }
-        SetofOptions: {
-          from: "*"
-          to: "appointments"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
       book_slot_confirmed: {
         Args: {
           p_clinic_id: string
@@ -455,33 +465,6 @@ export type Database = {
           p_service_id: string
           p_starts_at: string
         }
-        Returns: {
-          cancellation_token: string
-          clinic_id: string
-          color: string | null
-          created_at: string
-          doctor_id: string
-          ends_at: string
-          id: string
-          notes: string | null
-          otp_code_hash: string | null
-          otp_expires_at: string | null
-          patient_name: string
-          patient_phone: string
-          reminder_sent: boolean
-          service_id: string
-          starts_at: string
-          status: Database["public"]["Enums"]["appointment_status"]
-        }
-        SetofOptions: {
-          from: "*"
-          to: "appointments"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      confirm_appointment: {
-        Args: { p_appointment_id: string; p_otp_code_hash: string }
         Returns: {
           cancellation_token: string
           clinic_id: string
@@ -559,12 +542,12 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      update_doctor_with_services: {
+        Args: { p_doctor_id: string; p_service_ids: string[] }
+        Returns: undefined
+      }
     }
     Enums: {
-      // Manual override: DB still has the 'pending' enum value for backwards
-      // compatibility with old RPC signatures, but a CHECK constraint on
-      // appointments.status physically blocks inserting it. Keeping the TS
-      // union to two states avoids dead branches in admin UI code.
       appointment_status: "confirmed" | "cancelled"
     }
     CompositeTypes: {
@@ -690,11 +673,9 @@ export type CompositeTypes<
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
 
-// Convenience row aliases (used by admin components)
+// Convenience row aliases consumed by admin components. Re-add new ones here
+// after running `npm run db:types`; the generator overwrites everything above.
 export type Service = Tables<'services'>
-export type Doctor  = Tables<'doctors'>
-export type Clinic  = Tables<'clinics'>
-export type DoctorScheduleException = Tables<'doctor_schedule_exceptions'>
 
 export const Constants = {
   public: {

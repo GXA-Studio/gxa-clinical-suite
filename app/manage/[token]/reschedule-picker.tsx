@@ -41,6 +41,7 @@ export function ReschedulePicker({ serviceId, doctorId, timezone, onSelect, onBa
   const today = useMemo(startOfToday, [])
 
   const [activeDow,    setActiveDow]    = useState<number[]>([])
+  const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set())
   const [dowLoading,   setDowLoading]   = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [month,        setMonth]        = useState<Date>(() => startOfToday())
@@ -48,13 +49,19 @@ export function ReschedulePicker({ serviceId, doctorId, timezone, onSelect, onBa
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
 
-  // Load active days-of-week for this service
+  // Load active days-of-week + dates blocked by full-day exceptions.
   useEffect(() => {
     setDowLoading(true)
     fetch(`/api/available-days?serviceId=${serviceId}`)
       .then((r) => r.json())
-      .then((body) => setActiveDow(body.activeDow ?? []))
-      .catch(() => setActiveDow([]))
+      .then((body: { activeDow?: number[]; blockedDates?: string[] }) => {
+        setActiveDow(body.activeDow ?? [])
+        setBlockedDates(new Set(body.blockedDates ?? []))
+      })
+      .catch(() => {
+        setActiveDow([])
+        setBlockedDates(new Set())
+      })
       .finally(() => setDowLoading(false))
   }, [serviceId])
 
@@ -95,10 +102,11 @@ export function ReschedulePicker({ serviceId, doctorId, timezone, onSelect, onBa
   const disabledMatcher = useMemo(
     () => (date: Date) => {
       if (date < today) return true
+      if (blockedDates.has(toDateParam(date))) return true
       if (activeDow.length === 0) return false
       return !activeDow.includes(date.getDay())
     },
-    [activeDow, today]
+    [activeDow, blockedDates, today]
   )
 
   const maxDate = useMemo(() => {

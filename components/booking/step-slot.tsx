@@ -45,6 +45,7 @@ export function StepSlot({ service, doctor, timezone, onSelect, onBack }: Props)
   const today = useMemo(startOfDay, [])
 
   const [activeDow,    setActiveDow]    = useState<number[]>([])
+  const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set())
   const [dowLoading,   setDowLoading]   = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [month,        setMonth]        = useState<Date>(() => startOfDay())
@@ -56,8 +57,14 @@ export function StepSlot({ service, doctor, timezone, onSelect, onBack }: Props)
     setDowLoading(true)
     fetch(`/api/available-days?serviceId=${service.id}`)
       .then((r) => r.json())
-      .then((body) => setActiveDow(body.activeDow ?? []))
-      .catch(() => setActiveDow([]))
+      .then((body: { activeDow?: number[]; blockedDates?: string[] }) => {
+        setActiveDow(body.activeDow ?? [])
+        setBlockedDates(new Set(body.blockedDates ?? []))
+      })
+      .catch(() => {
+        setActiveDow([])
+        setBlockedDates(new Set())
+      })
       .finally(() => setDowLoading(false))
   }, [service.id])
 
@@ -108,10 +115,11 @@ export function StepSlot({ service, doctor, timezone, onSelect, onBack }: Props)
   const disabledMatcher = useMemo(
     () => (date: Date) => {
       if (date < today) return true
+      if (blockedDates.has(toDateParam(date))) return true
       if (activeDow.length === 0) return false
       return !activeDow.includes(date.getDay())
     },
-    [activeDow, today]
+    [activeDow, blockedDates, today]
   )
 
   const maxDate = useMemo(() => {

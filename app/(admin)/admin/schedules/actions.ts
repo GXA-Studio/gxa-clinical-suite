@@ -196,17 +196,13 @@ export async function checkExceptionConflicts(input: ExceptionInput): Promise<{
     .single()
   const timezone = (doctorRow?.clinics as { timezone: string } | null)?.timezone ?? 'UTC'
 
-  // Build the UTC window we need to check overlap against
-  const dateStr = parsed.data.exception_date
-  let windowStartUtc: Date
-  let windowEndUtc:   Date
-  if (parsed.data.kind === 'full-day') {
-    windowStartUtc = utcFromClinicLocal(`${dateStr}T00:00:00`, timezone)
-    windowEndUtc   = utcFromClinicLocal(`${dateStr}T23:59:59.999`, timezone)
-  } else {
-    windowStartUtc = utcFromClinicLocal(`${dateStr}T${parsed.data.start_time!}:00`, timezone)
-    windowEndUtc   = utcFromClinicLocal(`${dateStr}T${parsed.data.end_time!}:00`, timezone)
-  }
+  const { startUtc: windowStartUtc, endUtc: windowEndUtc } = buildExceptionWindow({
+    date:     parsed.data.exception_date,
+    kind:     parsed.data.kind,
+    startHM:  parsed.data.kind === 'partial' ? parsed.data.start_time! : null,
+    endHM:    parsed.data.kind === 'partial' ? parsed.data.end_time!   : null,
+    timezone,
+  })
 
   // Fetch confirmed appointments for the doctor whose [starts_at, ends_at)
   // overlaps the window. The overlap predicate `a.starts < window_end AND a.ends > window_start`
@@ -238,6 +234,41 @@ function utcFromClinicLocal(localDateTime: string, tz: string): Date {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { fromZonedTime } = require('date-fns-tz') as typeof import('date-fns-tz')
   return fromZonedTime(localDateTime, tz)
+}
+
+// Increment a YYYY-MM-DD by one calendar day. Uses Date's local constructor so
+// month/year rollover is automatic and we never round-trip through UTC.
+function nextDayLocal(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const next = new Date(y, m - 1, d + 1)
+  return [
+    next.getFullYear(),
+    String(next.getMonth() + 1).padStart(2, '0'),
+    String(next.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+// B-2 — Single source of truth for the exception window. Full-day blocks end
+// at the next day's 00:00 (the first instant NOT covered), partial blocks end
+// at their declared end_time. Both endpoints are exclusive, matching the
+// PostgREST predicate `starts_at < windowEnd AND ends_at > windowStart`.
+function buildExceptionWindow(args: {
+  date:     string
+  kind:     'full-day' | 'partial'
+  startHM:  string | null
+  endHM:    string | null
+  timezone: string
+}): { startUtc: Date; endUtc: Date } {
+  if (args.kind === 'full-day') {
+    return {
+      startUtc: utcFromClinicLocal(`${args.date}T00:00:00`, args.timezone),
+      endUtc:   utcFromClinicLocal(`${nextDayLocal(args.date)}T00:00:00`, args.timezone),
+    }
+  }
+  return {
+    startUtc: utcFromClinicLocal(`${args.date}T${args.startHM!}:00`, args.timezone),
+    endUtc:   utcFromClinicLocal(`${args.date}T${args.endHM!}:00`,   args.timezone),
+  }
 }
 
 export async function createScheduleException(
@@ -358,15 +389,13 @@ async function cancelOverlappingAppointments(args: {
   const clinicSlug = clinic?.slug     ?? null
   const doctorName = (doctorRow as { name?: string } | null)?.name ?? null
 
-  let windowStartUtc: Date
-  let windowEndUtc:   Date
-  if (args.kind === 'full-day') {
-    windowStartUtc = utcFromClinicLocal(`${args.date}T00:00:00`, timezone)
-    windowEndUtc   = utcFromClinicLocal(`${args.date}T23:59:59.999`, timezone)
-  } else {
-    windowStartUtc = utcFromClinicLocal(`${args.date}T${args.startHM!}:00`, timezone)
-    windowEndUtc   = utcFromClinicLocal(`${args.date}T${args.endHM!}:00`, timezone)
-  }
+  const { startUtc: windowStartUtc, endUtc: windowEndUtc } = buildExceptionWindow({
+    date:     args.date,
+    kind:     args.kind,
+    startHM:  args.startHM,
+    endHM:    args.endHM,
+    timezone,
+  })
 
   // Service-role client to bypass RLS for the bulk update + notify pipeline.
   const svc = createServiceClient()

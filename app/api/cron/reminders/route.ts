@@ -42,14 +42,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Database query failed' }, { status: 500 })
   }
 
-  let sent = 0
-  let failed = 0
+  // Dispatch every reminder concurrently so the cron stays well below the
+  // Vercel function timeout even when Twilio adds latency. Promise.allSettled
+  // ensures one Twilio failure does not abort the rest, and the per-row
+  // try/catch keeps the reminder_sent flip strictly coupled to a successful
+  // send (a failed Twilio call leaves the row eligible for the next run).
+  const results = await Promise.allSettled(
+    (appointments ?? []).map(async (appt) => {
+      const clinic = appt.clinics as { name: string; timezone: string } | null
+      const doctor = appt.doctors as { name: string }                   | null
 
-  for (const appt of appointments ?? []) {
-    const clinic = appt.clinics  as { name: string; timezone: string } | null
-    const doctor = appt.doctors  as { name: string } | null
-
-    try {
       await sendWhatsAppReminder({
         to:                appt.patient_phone,
         patientName:       appt.patient_name,
@@ -61,15 +63,28 @@ export async function GET(req: NextRequest) {
         baseUrl,
       })
 
-      await supabase
+      const { error: flipError } = await supabase
         .from('appointments')
         .update({ reminder_sent: true })
         .eq('id', appt.id)
 
+      if (flipError) throw flipError
+      return appt.id
+    })
+  )
+
+  let sent = 0
+  let failed = 0
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]
+    if (r.status === 'fulfilled') {
       sent++
-    } catch (err) {
-      console.error(`[cron/reminders] Failed for appointment ${appt.id}:`, err)
+    } else {
       failed++
+      console.error(
+        `[cron/reminders] Failed for appointment ${appointments?.[i]?.id}:`,
+        r.reason,
+      )
     }
   }
 

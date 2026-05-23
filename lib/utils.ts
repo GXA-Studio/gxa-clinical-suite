@@ -47,43 +47,37 @@ export function sanitizeName(name: string): string {
 // Single source of truth for the public app URL.
 // Priority: NEXT_PUBLIC_APP_URL → VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL → localhost.
 // VERCEL_* vars arrive WITHOUT a protocol prefix — we always prepend "https://".
-// Anti-Localhost guard: if running on Vercel (VERCEL=1) and the resolved URL still contains
-// "localhost", we override with the hardcoded prod domain. This prevents broken cancel links
-// caused by NEXT_PUBLIC_APP_URL being accidentally set to localhost in the dashboard.
-const PROD_FALLBACK = 'https://medical-booking-boilerplate.vercel.app'
-
+// On Vercel deployments the URL is required: if none of the env vars resolves to
+// a non-localhost value, we throw. The previous hardcoded `medical-booking-boilerplate`
+// fallback made forks/multi-tenant deploys silently emit broken cancellation links.
 export function getBaseUrl(): string {
   const onVercel = process.env.VERCEL === '1'
 
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    const url = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
+  const candidate =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) ??
+    (process.env.VERCEL_URL                    && `https://${process.env.VERCEL_URL}`) ??
+    null
+
+  if (candidate) {
+    const url = candidate.replace(/\/$/, '')
     if (onVercel && url.includes('localhost')) {
-      console.warn('[getBaseUrl] NEXT_PUBLIC_APP_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
-      return PROD_FALLBACK
+      throw new Error(
+        '[getBaseUrl] Resolved URL contains "localhost" on Vercel. ' +
+        'Set NEXT_PUBLIC_APP_URL in the Vercel Dashboard.'
+      )
     }
     return url
   }
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-    const url = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    if (onVercel && url.includes('localhost')) {
-      console.warn('[getBaseUrl] VERCEL_PROJECT_PRODUCTION_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
-      return PROD_FALLBACK
-    }
-    return url
-  }
-  if (process.env.VERCEL_URL) {
-    const url = `https://${process.env.VERCEL_URL}`
-    if (onVercel && url.includes('localhost')) {
-      console.warn('[getBaseUrl] VERCEL_URL contains localhost on Vercel — overriding with prod fallback:', PROD_FALLBACK)
-      return PROD_FALLBACK
-    }
-    return url
-  }
+
   if (onVercel) {
-    console.warn('[getBaseUrl] Running on Vercel but no URL env var resolved — forcing prod fallback:', PROD_FALLBACK)
-    return PROD_FALLBACK
+    throw new Error(
+      '[getBaseUrl] Running on Vercel but no URL env var resolved. ' +
+      'Set NEXT_PUBLIC_APP_URL (or rely on VERCEL_PROJECT_PRODUCTION_URL / VERCEL_URL).'
+    )
   }
-  console.warn('[getBaseUrl] source=localhost fallback — set NEXT_PUBLIC_APP_URL in Vercel Dashboard')
+
+  console.warn('[getBaseUrl] No NEXT_PUBLIC_APP_URL set — falling back to http://localhost:3000 (dev only).')
   return 'http://localhost:3000'
 }
 

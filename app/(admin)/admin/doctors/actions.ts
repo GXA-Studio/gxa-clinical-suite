@@ -121,11 +121,15 @@ export async function updateDoctor(id: string, formData: FormData) {
     return { error: 'Error al guardar el médico.' }
   }
 
-  await supabase.from('doctor_services').delete().eq('doctor_id', id)
-  if (assertion.uniqueIds.length) {
-    await supabase.from('doctor_services').insert(
-      assertion.uniqueIds.map((sid) => ({ doctor_id: id, service_id: sid }))
-    )
+  // B-6 — atomic DELETE+INSERT inside a single PG function so the wizard never
+  // observes a doctor with zero services between the two calls.
+  const { error: linkError } = await supabase.rpc('update_doctor_with_services', {
+    p_doctor_id:   id,
+    p_service_ids: assertion.uniqueIds,
+  })
+  if (linkError) {
+    console.error('[updateDoctor] update_doctor_with_services error:', linkError)
+    return { error: 'Error al actualizar los servicios del médico.' }
   }
 
   revalidatePath('/admin/doctors')
