@@ -130,7 +130,7 @@ export function ScheduleEditor({ doctors: initialDoctors }: { doctors: DoctorWit
   } | null>(null)
   const [checkingConflicts, setCheckingConflicts] = useState(false)
 
-  const { notifyDemo } = useGuestMode()
+  const { isGuest, notifyDemo } = useGuestMode()
   const [pending, start] = useTransition()
   const [optimisticDoctors, dispatchOptimistic] =
     useOptimistic(initialDoctors, applyOptimistic)
@@ -162,6 +162,9 @@ export function ScheduleEditor({ doctors: initialDoctors }: { doctors: DoctorWit
   }
 
   function handleDeleteSchedule(id: string) {
+    // Guard demo BEFORE optimistic dispatch so the row doesn't visually
+    // disappear when nothing was persisted server-side.
+    if (isGuest) { notifyDemo(); return }
     start(async () => {
       dispatchOptimistic({ type: 'delete-schedule', id })
       await deleteSchedule(id)
@@ -169,6 +172,7 @@ export function ScheduleEditor({ doctors: initialDoctors }: { doctors: DoctorWit
   }
 
   function handleToggleSchedule(id: string, checked: boolean) {
+    if (isGuest) { notifyDemo(); return }
     start(async () => {
       dispatchOptimistic({ type: 'toggle-schedule', id, active: checked })
       await toggleSchedule(id, checked)
@@ -220,6 +224,12 @@ export function ScheduleEditor({ doctors: initialDoctors }: { doctors: DoctorWit
   function persistException(input: ExceptionInput, options: { cancelOverlapping: boolean }) {
     start(async () => {
       const result = await createScheduleException(input, options)
+      if ('demo' in result) {
+        notifyDemo()
+        setExceptionDialogOpen(false)
+        setConflictWarning(null)
+        return
+      }
       if ('error' in result && result.error) {
         toast({ variant: 'destructive', title: 'Error', description: result.error })
         return
@@ -247,6 +257,7 @@ export function ScheduleEditor({ doctors: initialDoctors }: { doctors: DoctorWit
   }
 
   function handleDeleteException(id: string) {
+    if (isGuest) { notifyDemo(); return }
     start(async () => {
       dispatchOptimistic({ type: 'delete-exception', id })
       await deleteScheduleException(id)

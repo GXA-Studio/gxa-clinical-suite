@@ -51,10 +51,15 @@ export function DoctorsClient({ doctors: initial, services }: { doctors: DoctorR
     })
   }
 
-  async function handleToggle(d: DoctorRow, checked: boolean) {
-    setDoctors((prev) => prev.map((x) => x.id === d.id ? { ...x, is_active: checked } : x))
-    const result = await toggleDoctor(d.id, checked)
-    if (result && 'demo' in result) notifyDemo()
+  function handleToggle(d: DoctorRow, checked: boolean) {
+    // Wrap in start() so React batches the optimistic state update with the
+    // server round-trip and treats overlapping spam-clicks as a single
+    // transition instead of racing setDoctors writes.
+    start(async () => {
+      setDoctors((prev) => prev.map((x) => x.id === d.id ? { ...x, is_active: checked } : x))
+      const result = await toggleDoctor(d.id, checked)
+      if (result && 'demo' in result) notifyDemo()
+    })
   }
 
   const selectedServiceIds = new Set(selected?.doctor_services.map((ds) => ds.service_id) ?? [])

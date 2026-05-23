@@ -31,8 +31,8 @@ function pickClinic(raw: unknown): ClinicShape {
 // ─── Cancel ───────────────────────────────────────────────────────────────────
 export async function adminCancelAppointment(
   appointmentId: string,
-): Promise<{ success: boolean; error?: string; demo?: boolean }> {
-  if (await isGuestMode()) return { ...DEMO_RESULT, success: true }
+): Promise<{ success?: boolean; error?: string; demo?: boolean }> {
+  if (await isGuestMode()) return DEMO_RESULT
   if (!UUID_RE.test(appointmentId)) return { success: false, error: 'ID de cita inválido.' }
 
   const supabase = await createClient()
@@ -83,8 +83,8 @@ export async function adminRescheduleAppointment(
   appointmentId: string,
   newDoctorId:   string,
   newStartsAt:   string,
-): Promise<{ success: boolean; error?: string; demo?: boolean }> {
-  if (await isGuestMode()) return { ...DEMO_RESULT, success: true }
+): Promise<{ success?: boolean; error?: string; demo?: boolean }> {
+  if (await isGuestMode()) return DEMO_RESULT
   if (!UUID_RE.test(appointmentId) || !UUID_RE.test(newDoctorId)) {
     return { success: false, error: 'Parámetros inválidos.' }
   }
@@ -150,8 +150,8 @@ const VALID_COLORS = ['blue', 'emerald', 'purple', 'amber', 'rose'] as const
 export async function adminUpdateAppointmentColor(
   appointmentId: string,
   color: string,
-): Promise<{ success: boolean; error?: string; demo?: boolean }> {
-  if (await isGuestMode()) return { ...DEMO_RESULT, success: true }
+): Promise<{ success?: boolean; error?: string; demo?: boolean }> {
+  if (await isGuestMode()) return DEMO_RESULT
   if (!UUID_RE.test(appointmentId)) return { success: false, error: 'ID de cita inválido.' }
   if (!(VALID_COLORS as readonly string[]).includes(color)) return { success: false, error: 'Color inválido.' }
 

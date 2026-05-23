@@ -22,6 +22,7 @@ import {
 import {
   adminCancelAppointment, adminRescheduleAppointment, adminUpdateAppointmentColor,
 } from '@/app/(admin)/admin/agenda/actions'
+import { useGuestMode } from '@/components/admin/guest-mode-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Doctor {
@@ -90,6 +91,7 @@ export function EditAppointmentDialog({
   appointment, doctors, services, timezone, open, onOpenChange,
 }: Props) {
   const router = useRouter()
+  const { notifyDemo } = useGuestMode()
   const [view, setView] = useState<View>('details')
   const [pending, start] = useTransition()
 
@@ -146,6 +148,11 @@ export function EditAppointmentDialog({
     setActiveColor(color)  // optimistic
     start(async () => {
       const result = await adminUpdateAppointmentColor(appointment.id, color)
+      if (result.demo) {
+        setActiveColor(previous)  // rollback: server didn't persist
+        notifyDemo()
+        return
+      }
       if (result.error) {
         setActiveColor(previous)
         toast({ variant: 'destructive', title: 'Error al cambiar el color', description: result.error })
@@ -157,6 +164,11 @@ export function EditAppointmentDialog({
   function handleConfirmCancel() {
     start(async () => {
       const result = await adminCancelAppointment(appointment.id)
+      if (result.demo) {
+        notifyDemo()
+        resetAndClose()
+        return
+      }
       if (result.error) {
         toast({ variant: 'destructive', title: 'Error al cancelar', description: result.error })
         return
@@ -175,6 +187,11 @@ export function EditAppointmentDialog({
     }
     start(async () => {
       const result = await adminRescheduleAppointment(appointment.id, newDoctorId, newSlotStart)
+      if (result.demo) {
+        notifyDemo()
+        resetAndClose()
+        return
+      }
       if (result.error) {
         toast({ variant: 'destructive', title: 'Error al reprogramar', description: result.error })
         return
