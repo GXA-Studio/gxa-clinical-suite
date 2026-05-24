@@ -136,7 +136,7 @@ export default async function PrivacidadPage({ searchParams }: PageProps) {
               ['Supabase Inc. (EE. UU.)',  'Almacenamiento cifrado de la base de datos de citas. Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
               ['Vercel Inc. (EE. UU.)',    'Alojamiento y distribución de la aplicación web. Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
               ['Upstash, Inc. (EE. UU.)',  'Servicio Redis utilizado para rate-limiting de las APIs públicas (reservas, leads, búsqueda de slots) y para mitigar abuso. Solo procesa la IP del solicitante de forma transitoria. Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
-              ['Google LLC (EE. UU.)',     'Servicio Gmail SMTP utilizado por la clínica para el envío de notificaciones operativas (avisos de leads de marketing al equipo). Opera bajo cláusulas contractuales tipo (SCCs) aprobadas por la Comisión Europea.'],
+              ['Proveedor SMTP Corporativo (Infraestructura Europea)', 'Servidor de correo electrónico corporativo utilizado para el envío de notificaciones operativas (avisos de leads de marketing al equipo interno). Opera en la Unión Europea o bajo las garantías adecuadas de transferencia internacional conforme al Capítulo V del RGPD.'],
             ]} />
             <P className="mt-3">
               Todos los proveedores indicados actúan como encargados del tratamiento bajo
