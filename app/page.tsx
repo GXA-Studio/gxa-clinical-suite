@@ -35,7 +35,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: 'Imposible reservar la misma hora dos veces',
-    body: 'Validación a nivel de base de datos: PostgreSQL rechaza colisiones antes de que existan. Tus pacientes no se encuentran con citas duplicadas, ni siquiera bajo carga.',
+    body: 'Infraestructura médica blindada: el sistema rechaza conflictos de agenda antes de que puedan ocurrir. Tus pacientes nunca se encuentran con citas duplicadas, incluso en momentos de alta demanda.',
   },
   {
     icon: MessageCircle,
@@ -55,7 +55,7 @@ const FEATURES = [
   {
     icon: Bot,
     title: 'Protegido contra bots y reservas falsas',
-    body: 'Rate-limit por IP y validación estricta de teléfonos E.164. Sin spam, sin huecos bloqueados por bots, sin números inventados.',
+    body: 'Acceso seguro con cifrado avanzado y validación instantánea de datos. Sin spam, sin huecos bloqueados por solicitudes fraudulentas, sin números de contacto inválidos.',
   },
 ]
 

@@ -10,11 +10,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Reservas',
-    template: '%s | Reservas',
+    default: 'GXA Clinical Suite - Gestión Clínica Inteligente',
+    template: '%s | GXA Clinical Suite',
   },
-  description: 'Sistema de reservas médicas',
-  robots: { index: false, follow: false }, // White-label: let each clinic set their own SEO
+  description: 'Gestión clínica inteligente: reservas, agenda y comunicación con pacientes en una sola plataforma.',
+  robots: { index: false, follow: false },
 }
 
 export default function RootLayout({
