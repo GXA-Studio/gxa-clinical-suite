@@ -6,7 +6,7 @@ import { Button }  from '@/components/ui/button'
 import { Input }   from '@/components/ui/input'
 import { Label }   from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Stethoscope, Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const [email,    setEmail]    = useState('')
@@ -41,17 +41,17 @@ export default function LoginPage() {
         {/* Logo mark */}
         <div className="flex justify-center mb-8">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary p-2.5">
-              <Stethoscope className="h-6 w-6 text-white" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
+              <span className="font-black text-white text-sm tracking-tight leading-none">GXA</span>
             </div>
-            <span className="text-xl font-semibold text-slate-800">MedBooking</span>
+            <span className="text-xl font-semibold text-slate-800">GXA Studio</span>
           </div>
         </div>
 
         <Card className="shadow-lg border-slate-200/60">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl">Bienvenido</CardTitle>
-            <CardDescription>Accede al panel de administración</CardDescription>
+            <CardDescription>Portal de Gestión Clínica</CardDescription>
           </CardHeader>
 
           <CardContent className="pt-4">
