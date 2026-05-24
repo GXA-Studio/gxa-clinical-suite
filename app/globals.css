@@ -4,67 +4,67 @@
 
 @layer base {
   :root {
-    /* Medical blue palette — professional, trustworthy */
-    --background: 210 20% 98%;
-    --foreground: 220 15% 12%;
+    /* GXA Studio palette — warm neutrals + coral CTA (#ff5539).
+       Override per tenant via CSS var injection. */
+    --background: 60 11% 98%;          /* #fafaf9 warm white */
+    --foreground: 0 0% 7%;              /* #131313 */
 
     --card: 0 0% 100%;
-    --card-foreground: 220 15% 12%;
+    --card-foreground: 0 0% 7%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 12%;
+    --popover-foreground: 0 0% 7%;
 
-    /* Primary: clinic brand blue — override per tenant via CSS var injection */
-    --primary: 215 90% 52%;
+    --primary: 9 100% 61%;              /* #ff5539 GXA coral */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 215 25% 93%;
-    --secondary-foreground: 220 15% 20%;
+    --secondary: 46 33% 86%;            /* #e8e2cf warm beige */
+    --secondary-foreground: 50 14% 26%; /* #4a4738 */
 
-    --muted: 215 20% 95%;
-    --muted-foreground: 215 15% 50%;
+    --muted: 60 9% 95%;                 /* #f4f4f2 */
+    --muted-foreground: 10 7% 33%;      /* #5a504e */
 
-    --accent: 215 25% 93%;
-    --accent-foreground: 220 15% 20%;
+    --accent: 60 7% 92%;                /* #ebebe8 */
+    --accent-foreground: 0 2% 11%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 8 99% 37%;           /* #bb1a01 deep brand red */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 215 20% 88%;
-    --input: 215 20% 88%;
-    --ring: 215 90% 52%;
+    --border: 15 6% 89%;
+    --input: 15 6% 89%;
+    --ring: 9 100% 61%;
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 220 20% 8%;
-    --foreground: 210 20% 96%;
+    --background: 0 0% 7%;              /* #131313 */
+    --foreground: 60 11% 98%;           /* #fafaf9 */
 
-    --card: 220 20% 10%;
-    --card-foreground: 210 20% 96%;
+    --card: 0 1% 19%;                   /* #313030 */
+    --card-foreground: 60 11% 98%;
 
-    --popover: 220 20% 10%;
-    --popover-foreground: 210 20% 96%;
+    --popover: 0 1% 19%;
+    --popover-foreground: 60 11% 98%;
 
-    --primary: 215 90% 58%;
+    --primary: 9 100% 61%;              /* #ff5539 brand stays */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 18%;
-    --secondary-foreground: 210 20% 88%;
+    --secondary: 50 14% 26%;            /* #4a4738 */
+    --secondary-foreground: 47 17% 68%; /* #bab5a3 */
 
-    --muted: 220 15% 16%;
-    --muted-foreground: 215 15% 55%;
+    --muted: 0 1% 21%;                  /* #353534 */
+    --muted-foreground: 0 0% 70%;
 
-    --accent: 220 15% 18%;
-    --accent-foreground: 210 20% 88%;
+    --accent: 0 1% 21%;
+    --accent-foreground: 60 11% 98%;
 
-    --destructive: 0 75% 55%;
+    --destructive: 8 90% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 215 90% 58%;
+    --border: 10 5% 18%;
+    --input: 10 5% 18%;
+    --ring: 9 100% 61%;
   }
 }
 

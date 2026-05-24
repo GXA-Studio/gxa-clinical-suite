@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   CalendarDays, UserRound, Layers, Clock,
-  LogOut, Stethoscope, ChevronRight, LayoutGrid,
+  LogOut, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 
 const navItems = [
@@ -38,11 +38,11 @@ export function Sidebar({ clinicName = 'Mi Clínica', userEmail = '' }: SidebarP
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-800">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shrink-0">
-          <Stethoscope className="h-5 w-5 text-white" />
+          <span className="font-black text-white text-[13px] tracking-tight leading-none">GXA</span>
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-white">{clinicName}</p>
-          <p className="text-[11px] text-slate-400">Panel Admin</p>
+          <p className="text-[11px] text-slate-400">Powered by GXA Studio</p>
         </div>
       </div>
 
