@@ -1,12 +1,13 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button }  from '@/components/ui/button'
 import { Input }   from '@/components/ui/input'
 import { Label }   from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, Eye } from 'lucide-react'
 
 export default function LoginPage() {
   const [email,    setEmail]    = useState('')
@@ -93,6 +94,23 @@ export default function LoginPage() {
                 {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Accediendo…</> : 'Acceder'}
               </Button>
             </form>
+
+            <div className="relative my-5">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-white px-2 text-muted-foreground">o</span>
+              </div>
+            </div>
+
+            <Link
+              href="/admin/guest"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            >
+              <Eye className="h-4 w-4 shrink-0" />
+              Probar Panel de Administración (Modo Demo)
+            </Link>
           </CardContent>
         </Card>
 

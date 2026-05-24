@@ -33,8 +33,8 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // Protect all /admin routes
-  if (pathname.startsWith('/admin') && !user) {
+  // Protect all /admin routes — exempt the unauthenticated demo entry point
+  if (pathname.startsWith('/admin') && pathname !== '/admin/guest' && !user) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/auth/login'
     loginUrl.searchParams.set('redirectTo', pathname)
